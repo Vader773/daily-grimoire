@@ -9,7 +9,7 @@ export const StreakCalendar = () => {
   const { stats } = useGameStore();
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
-  const { days, monthLabel, streak } = useMemo(() => {
+  const { days, monthLabel, streak, longestStreak } = useMemo(() => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
     const firstDay = new Date(year, month, 1);
@@ -45,8 +45,10 @@ export const StreakCalendar = () => {
 
     const monthLabel = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-    return { days: daysInMonth, monthLabel, streak: stats.streak };
-  }, [currentMonth, stats.dailyXP, stats.streak]);
+
+
+    return { days: daysInMonth, monthLabel, streak: stats.streak, longestStreak: stats.longestStreak || stats.streak };
+  }, [currentMonth, stats.dailyXP, stats.streak, stats.longestStreak]);
 
   const goToPrevMonth = () => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
@@ -68,8 +70,21 @@ export const StreakCalendar = () => {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <StreakFlame streak={streak} size="sm" animated={false} />
-          <span className="font-heading font-bold text-lg">Streak Calendar</span>
+          <div className="flex items-center gap-1">
+            <StreakFlame streak={streak} size="sm" animated={false} />
+            {/* Ghost Flame for All Time High */}
+            {streak < longestStreak && (
+              <div className="opacity-50 flex items-center gap-1 ml-1" title={`All Time Best: ${longestStreak}`}>
+                <StreakFlame streak={longestStreak} size="sm" animated={false} />
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col">
+            <span className="font-heading font-bold text-lg leading-none">Streak Calendar</span>
+            {streak < longestStreak && (
+              <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Chasing: {longestStreak}</span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2 bg-muted/30 rounded-full p-1 border border-white/5">
           <button

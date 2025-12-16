@@ -24,7 +24,6 @@ const unitPresets: Record<HabitTemplate, { label: string; value: GoalExercise['u
     fitness: [
         { label: 'Reps', value: 'reps' },
         { label: 'Minutes', value: 'minutes' },
-        { label: 'Sessions', value: 'sessions' },
     ],
     mindfulness: [
         { label: 'Minutes', value: 'minutes' },
@@ -33,7 +32,7 @@ const unitPresets: Record<HabitTemplate, { label: string; value: GoalExercise['u
     learning: [
         { label: 'Pages', value: 'pages' },
         { label: 'Minutes', value: 'minutes' },
-        { label: 'Sessions', value: 'sessions' },
+        { label: 'Books', value: 'books' },
     ],
     custom: [
         { label: 'Reps', value: 'reps' },
@@ -88,8 +87,7 @@ export const HabitWizard = () => {
     };
 
     const addExercise = () => {
-        const defaultUnit = template === 'fitness' ? 'reps' : template === 'mindfulness' ? 'minutes' : 'reps';
-        setExercises([...exercises, { name: '', currentAmount: 10, unit: defaultUnit }]);
+        setExercises([...exercises, { name: '', currentAmount: 10, unit: 'minutes' }]);
     };
 
     const updateExercise = (index: number, updates: Partial<GoalExercise>) => {
@@ -287,7 +285,7 @@ export const HabitWizard = () => {
                                                 <div>
                                                     <label className="text-xs font-medium text-muted-foreground mb-2 block">Times per Week</label>
                                                     <div className="flex gap-2">
-                                                        {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                                                        {[1, 2, 3, 4, 5, 6].map((n) => (
                                                             <button
                                                                 key={n}
                                                                 type="button"
@@ -366,21 +364,9 @@ export const HabitWizard = () => {
                                                             <div>
                                                                 <label className="text-[10px] text-muted-foreground mb-1 block">Unit</label>
                                                                 <div className="flex flex-wrap gap-1">
-                                                                    {unitPresets[template].map((preset) => (
-                                                                        <button
-                                                                            key={preset.value}
-                                                                            type="button"
-                                                                            onClick={() => updateExercise(index, { unit: preset.value })}
-                                                                            className={cn(
-                                                                                "px-2 py-1 rounded-full text-[10px] font-medium transition-all",
-                                                                                exercise.unit === preset.value
-                                                                                    ? "bg-purple-500 text-white"
-                                                                                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
-                                                                            )}
-                                                                        >
-                                                                            {preset.label}
-                                                                        </button>
-                                                                    ))}
+                                                                    <div className="px-2 py-1 rounded-full text-[10px] font-medium bg-purple-500 text-white">
+                                                                        Minutes
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                         </div>

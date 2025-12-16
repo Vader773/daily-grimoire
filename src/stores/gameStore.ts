@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-// import { persist } from 'zustand/middleware'; // DISABLED FOR TESTING
+import { persist } from 'zustand/middleware';
 
 export type Difficulty = 'trivial' | 'easy' | 'medium' | 'hard' | 'boss';
 export type League = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond' | 'master' | 'grandmaster' | 'champion' | 'legend' | 'immortal';
@@ -73,8 +73,12 @@ export interface Goal {
   consecutiveDays: number;    // For progressive overload (3 days = increment)
   history: { date: string; value: number; exerciseId?: string }[];
   createdAt: number;
-  completedAt?: number;
+  completedAt?: number; // Timestamp when goal was completed (all targets met)
+  // Shame Badge / Streak Logic
+  streakBrokenDate?: string; // Date string when streak was broken
+  previousStreak?: number; // The streak count before it was broken
   completed: boolean;
+  rewardsClaimed?: boolean;
 }
 
 export interface Habit {
@@ -96,6 +100,7 @@ export interface UserStats {
   totalLifetimeXP: number;
   level: number;
   streak: number;
+  longestStreak?: number; // Track all-time high
   lastActiveDate: string | null;
   dailyXP: { date: string; xp: number }[];
 }
@@ -118,13 +123,14 @@ interface GameState {
   setActiveView: (view: 'tasks' | 'goals' | 'habits') => void;
 
   // Goal actions
-  addGoal: (goal: Omit<Goal, 'id' | 'createdAt' | 'completed' | 'consecutiveDays' | 'history'>) => void;
+  addGoal: (goal: Omit<Goal, 'id' | 'createdAt' | 'completed' | 'consecutiveDays' | 'history' | 'streakBrokenDate' | 'previousStreak'>) => void;
   deleteGoal: (id: string) => void;
   completeGoalTask: (taskId: string, actualAmount?: number) => { xp: number; leveledUp: boolean; newLevel: number; bonusXP?: number };
   overclockTask: (taskId: string, actualAmount: number) => { bonusXP: number };
   updateAccumulatorProgress: (taskId: string, amount: number) => void;
   checkAndGenerateDailyTasks: () => void;
   moveGoalToHabit: (goalId: string) => void;
+  claimGoalRewards: (goalId: string) => void;
 
   // Habit actions
   addHabit: (habit: Omit<Habit, 'id' | 'createdAt' | 'streak' | 'longestStreak'>) => void;
@@ -148,6 +154,8 @@ interface GameState {
   debugIncreaseStreak: (days: number) => void;
   debugAddXP: (amount: number) => void;
   debugCycleLeague: (direction: 'next' | 'prev') => void;
+  debugAdvanceDay: () => void;
+  debugResetAll: () => void; // New reset function
 }
 
 const XP_VALUES: Record<Difficulty, number> = {
@@ -183,12 +191,18 @@ const getXPForLevel = (level: number): number => {
   return Math.pow((level - 1) / 0.1, 2);
 };
 
-const getTodayDate = (): string => {
-  return new Date().toISOString().split('T')[0];
+// DEBUG: Offset for date simulation
+export let DEBUG_DATE_OFFSET = 0;
+
+export const getTodayDate = (): string => {
+  const now = new Date();
+  now.setDate(now.getDate() + DEBUG_DATE_OFFSET);
+  return now.toISOString().split('T')[0];
 };
 
 const getStartOfWeek = (): string => {
   const now = new Date();
+  now.setDate(now.getDate() + DEBUG_DATE_OFFSET);
   const dayOfWeek = now.getDay();
   const startOfWeek = new Date(now);
   startOfWeek.setDate(now.getDate() - dayOfWeek);
@@ -199,7 +213,7 @@ const getLast7Days = (): string[] => {
   const days: string[] = [];
   for (let i = 0; i < 7; i++) {
     const date = new Date();
-    date.setDate(date.getDate() - i);
+    date.setDate(date.getDate() + DEBUG_DATE_OFFSET - i);
     days.push(date.toISOString().split('T')[0]);
   }
   return days;
@@ -208,6 +222,7 @@ const getLast7Days = (): string[] => {
 const getCurrentMonthDays = (): string[] => {
   const days: string[] = [];
   const now = new Date();
+  now.setDate(now.getDate() + DEBUG_DATE_OFFSET);
   const year = now.getFullYear();
   const month = now.getMonth();
   const firstDay = new Date(year, month, 1);
@@ -350,7 +365,7 @@ const generateHabitTask = (habit: Habit, exercise?: GoalExercise): Task | null =
       exerciseId: exercise.id,
       goalTitle: habit.title,
       exerciseName: exercise.name,
-      finalGoal: exercise.currentAmount,
+      finalGoal: exercise.targetAmount, // Assuming targetAmount is mapped to WannaDo
     };
   }
 
@@ -370,420 +385,511 @@ const generateHabitTask = (habit: Habit, exercise?: GoalExercise): Task | null =
 };
 
 export const useGameStore = create<GameState>()(
-  // PERSISTENCE DISABLED FOR TESTING
-  // persist(
-  (set, get) => ({
-    tasks: [],
-    goals: [],
-    habits: [],
-    stats: {
-      currentXP: 0,
-      totalLifetimeXP: 0,
-      level: 1,
-      streak: 0,
-      lastActiveDate: null,
-      dailyXP: [],
-    },
-    theme: 'dark',
-    activeView: 'tasks',
+  persist(
+    (set, get) => ({
+      tasks: [],
+      goals: [],
+      habits: [],
+      stats: {
+        currentXP: 0,
+        totalLifetimeXP: 0,
+        level: 1,
+        streak: 0,
+        lastActiveDate: null,
+        dailyXP: [],
+      },
+      theme: 'dark',
+      activeView: 'tasks',
 
-    setActiveView: (view) => set({ activeView: view }),
+      setActiveView: (view) => set({ activeView: view }),
 
-    addTask: (title, difficulty, timerMinutes) => {
-      const needsTimer = (difficulty === 'hard' || difficulty === 'boss') && timerMinutes && timerMinutes > 0;
-      const newTask: Task = {
-        id: crypto.randomUUID(),
-        title,
-        difficulty,
-        xp: XP_VALUES[difficulty],
-        completed: false,
-        createdAt: Date.now(),
-        timerEnabled: needsTimer,
-        timerDuration: needsTimer ? timerMinutes * 60 : undefined,
-        timerStartedAt: undefined,
-        timerCompleted: false,
-        isGoalTask: false,
-      };
-      set((state) => ({
-        tasks: [newTask, ...state.tasks],
-      }));
-    },
-
-    startTimer: (id) => {
-      set((state) => ({
-        tasks: state.tasks.map((t) =>
-          t.id === id ? { ...t, timerStartedAt: Date.now() } : t
-        ),
-      }));
-    },
-
-    completeTimer: (id) => {
-      set((state) => ({
-        tasks: state.tasks.map((t) =>
-          t.id === id ? { ...t, timerCompleted: true } : t
-        ),
-      }));
-    },
-
-    completeTask: (id) => {
-      const state = get();
-      const task = state.tasks.find((t) => t.id === id);
-      if (!task || task.completed) return { xp: 0, leveledUp: false, newLevel: state.stats.level };
-
-      const xpGained = task.xp;
-      const newTotalXP = state.stats.totalLifetimeXP + xpGained;
-      const oldLevel = state.stats.level;
-      const newLevel = calculateLevel(newTotalXP);
-      const leveledUp = newLevel > oldLevel;
-
-      const today = getTodayDate();
-      // Streak logic moved inside dailyXP check to ensure it triggers correctly on first activity
-      // Removing the old block to avoid double counting for task completion vs first daily action
-      // const today = getTodayDate(); // Already defined above
-      let newStreak = state.stats.streak;
-
-      // Update daily XP tracking - THIS IS CRITICAL FOR LEAGUE PROGRESS
-      const updatedDailyXP = [...state.stats.dailyXP];
-      const todayEntry = updatedDailyXP.find(d => d.date === today);
-      if (todayEntry) {
-        todayEntry.xp += xpGained;
-      } else {
-        updatedDailyXP.push({ date: today, xp: xpGained });
-
-        // --- STREAK LOGIC FIX ---
-        // If this is the FIRST task of the day (no entry existed before this push),
-        // we check if we should increment streak or reset to 1.
-
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-        if (state.stats.lastActiveDate === yesterdayStr) {
-          // Continued streak
-          newStreak += 1;
-        } else if (state.stats.lastActiveDate !== today) {
-          // Not yesterday, and not today (obv, since no entry existed)
-          // Means we broke the streak or it's day 1.
-          // However, if lastActiveDate WAS today, we wouldn't be in this 'else' block 
-          // (unless we manually manipulated stats, but generally safe).
-          newStreak = 1;
-        }
-      }
-      // Keep only last 30 days
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const filteredDailyXP = updatedDailyXP.filter(d => new Date(d.date) >= thirtyDaysAgo);
-
-      set({
-        debugLeagueOverride: undefined,
-        tasks: state.tasks.map((t) =>
-          t.id === id ? { ...t, completed: true, completedAt: Date.now() } : t
-        ),
-        stats: {
-          ...state.stats,
-          currentXP: state.stats.currentXP + xpGained,
-          totalLifetimeXP: newTotalXP,
-          level: newLevel,
-          streak: newStreak,
-          lastActiveDate: today,
-          dailyXP: filteredDailyXP,
-        },
-      });
-
-      return { xp: xpGained, leveledUp, newLevel };
-    },
-
-    deleteTask: (id) => {
-      set((state) => ({
-        tasks: state.tasks.filter((t) => t.id !== id),
-      }));
-    },
-
-    toggleTheme: () => {
-      set((state) => {
-        const newTheme = state.theme === 'dark' ? 'light' : 'dark';
-        document.documentElement.classList.toggle('dark', newTheme === 'dark');
-        return { theme: newTheme };
-      });
-    },
-
-    // Goal Actions
-    addGoal: (goalData) => {
-      const newGoal: Goal = {
-        ...goalData,
-        id: crypto.randomUUID(),
-        createdAt: Date.now(),
-        completed: false,
-        consecutiveDays: 0,
-        history: [],
-      };
-
-      // Generate initial tasks for all exercises
-      const newTasks: Task[] = [];
-
-      if (newGoal.type === 'progressive') {
-        // For progressive goals, generate a task for each exercise
-        newGoal.exercises.forEach(exercise => {
-          const task = generateGoalTask(newGoal, exercise);
-          if (task) newTasks.push(task);
-        });
-      } else if (newGoal.type === 'frequency' && newGoal.exercises.length > 0) {
-        // For frequency with intensity, generate tasks for exercises
-        newGoal.exercises.forEach(exercise => {
-          const task = generateGoalTask(newGoal, exercise);
-          if (task) newTasks.push(task);
-        });
-      } else {
-        // For accumulator or simple frequency
-        const task = generateGoalTask(newGoal);
-        if (task) newTasks.push(task);
-      }
-
-      set((state) => ({
-        goals: [newGoal, ...state.goals],
-        tasks: [...newTasks, ...state.tasks],
-      }));
-    },
-
-    deleteGoal: (id) => {
-      set((state) => ({
-        goals: state.goals.filter((g) => g.id !== id),
-        tasks: state.tasks.filter((t) => t.goalId !== id),
-      }));
-    },
-
-    completeGoalTask: (taskId, actualAmount) => {
-      const state = get();
-      const task = state.tasks.find(t => t.id === taskId);
-      if (!task?.goalId) return { xp: 0, leveledUp: false, newLevel: state.stats.level };
-
-      // Complete the task first and get XP
-      const result = get().completeTask(taskId);
-
-      const goal = get().goals.find(g => g.id === task.goalId);
-      if (!goal) return result;
-
-      const today = getTodayDate();
-
-      // Handle based on goal type
-      if (goal.type === 'progressive' && task.exerciseId) {
-        // Find the exercise and update it
-        const exercise = goal.exercises.find(e => e.id === task.exerciseId);
-        if (!exercise) return result;
-
-        const newDaysAtTarget = exercise.daysAtCurrentTarget + 1;
-        let newCurrentAmount = exercise.currentAmount;
-
-        // After 3 consecutive days at this target, increase by 5%
-        if (newDaysAtTarget >= 3) {
-          newCurrentAmount = Math.ceil(exercise.currentAmount * 1.05);
-          // Don't exceed target
-          newCurrentAmount = Math.min(newCurrentAmount, exercise.targetAmount);
-        }
-
-        const updatedExercises = goal.exercises.map(e =>
-          e.id === task.exerciseId
-            ? {
-              ...e,
-              currentAmount: newCurrentAmount,
-              daysAtCurrentTarget: newDaysAtTarget >= 3 ? 0 : newDaysAtTarget
-            }
-            : e
-        );
-
-        // Check if goal is complete (all exercises reached target)
-        const isGoalComplete = updatedExercises.every(e => e.currentAmount >= e.targetAmount);
-
+      addTask: (title, difficulty, timerMinutes) => {
+        const needsTimer = (difficulty === 'hard' || difficulty === 'boss') && timerMinutes && timerMinutes > 0;
+        const newTask: Task = {
+          id: crypto.randomUUID(),
+          title,
+          difficulty,
+          xp: XP_VALUES[difficulty],
+          completed: false,
+          createdAt: Date.now(),
+          timerEnabled: needsTimer,
+          timerDuration: needsTimer ? timerMinutes * 60 : undefined,
+          timerStartedAt: undefined,
+          timerCompleted: false,
+          isGoalTask: false,
+        };
         set((state) => ({
-          goals: state.goals.map(g =>
-            g.id === task.goalId
-              ? {
-                ...g,
-                exercises: updatedExercises,
-                consecutiveDays: goal.consecutiveDays + 1,
-                history: [...g.history, { date: today, value: actualAmount || task.requiredAmount || 0, exerciseId: task.exerciseId }],
-                completed: isGoalComplete,
-                completedAt: isGoalComplete ? Date.now() : undefined,
-              }
-              : g
+          tasks: [newTask, ...state.tasks],
+        }));
+      },
+
+      startTimer: (id) => {
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === id ? { ...t, timerStartedAt: Date.now() } : t
           ),
         }));
+      },
 
-        // Award bonus XP for completing the goal
-        // Award bonus XP for completing the goal
-        // Use result.xp (task XP) + current total as base, or ensure we add to the LATEST value
-        // result.xp is returned by completeTask logic? No, completeTask returns { xp: ... }
-        // We are INSIDE completeTask.
-        if (isGoalComplete) {
-          const bonusXP = 1000;
-          const currentTotalXP = get().stats.totalLifetimeXP; // This should include task XP if set() was called previously
-          const newTotalXP = currentTotalXP + bonusXP;
-          const newLevel = calculateLevel(newTotalXP);
+      completeTimer: (id) => {
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === id ? { ...t, timerCompleted: true } : t
+          ),
+        }));
+      },
 
-          const updatedDailyXP = [...get().stats.dailyXP];
-          const todayEntry = updatedDailyXP.find(d => d.date === today);
-          if (todayEntry) {
-            todayEntry.xp += bonusXP;
-          } else {
-            updatedDailyXP.push({ date: today, xp: bonusXP });
+      completeTask: (id) => {
+        const state = get();
+        const task = state.tasks.find((t) => t.id === id);
+        if (!task || task.completed) return { xp: 0, leveledUp: false, newLevel: state.stats.level };
+
+        const xpGained = task.xp;
+        const newTotalXP = state.stats.totalLifetimeXP + xpGained;
+        const oldLevel = state.stats.level;
+        const newLevel = calculateLevel(newTotalXP);
+        const leveledUp = newLevel > oldLevel;
+
+        const today = getTodayDate();
+        // Streak logic moved inside dailyXP check to ensure it triggers correctly on first activity
+        // Removing the old block to avoid double counting for task completion vs first daily action
+        // const today = getTodayDate(); // Already defined above
+        let newStreak = state.stats.streak;
+
+        // Update daily XP tracking - THIS IS CRITICAL FOR LEAGUE PROGRESS
+        // --- GLOBAL STREAK LOGIC FIXED ---
+        // Check if we have already recorded XP/Activity for "today"
+        // We check if there is an entry in dailyXP for today.
+        // NOTE: We do this check BEFORE adding the new XP to dailyXP in the logic below, 
+        // but to be safe and handle the "first action" correctly, we check if today's entry exists.
+
+        const updatedDailyXP = [...state.stats.dailyXP];
+        const existingTodayEntry = updatedDailyXP.find(d => d.date === today);
+
+        // If NO entry existed for today (or it was 0), this is the FIRST action of the day.
+        if (!existingTodayEntry) {
+          // This is the first significant action of the day
+          // Check streak continuity
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1 + DEBUG_DATE_OFFSET); // Respect debug offset
+          const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+          if (state.stats.lastActiveDate === yesterdayStr) {
+            newStreak += 1;
+          } else if (state.stats.lastActiveDate !== today) {
+            // Break streak if not yesterday and not today
+            newStreak = 1;
           }
-
-          set((state) => ({
-            stats: {
-              ...state.stats,
-              totalLifetimeXP: newTotalXP,
-              level: newLevel,
-              dailyXP: updatedDailyXP,
-            }
-          }));
         }
-      }
 
-      if (goal.type === 'frequency') {
-        const newProgress = (goal.params.weeklyProgress || 0) + 1;
-        const weeklyTarget = goal.params.weeklyTarget || 3;
-        const isWeeklyComplete = newProgress >= weeklyTarget;
+        if (existingTodayEntry) {
+          existingTodayEntry.xp += xpGained;
+        } else {
+          updatedDailyXP.push({ date: today, xp: xpGained });
+        }
+        // Keep only last 30 days
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const filteredDailyXP = updatedDailyXP.filter(d => new Date(d.date) >= thirtyDaysAgo);
 
-        // Update exercise intensity if there's an exercise
-        let updatedExercises = [...goal.exercises];
-        if (task.exerciseId) {
+        set({
+          debugLeagueOverride: undefined,
+          tasks: state.tasks.map((t) =>
+            t.id === id ? { ...t, completed: true, completedAt: Date.now() } : t
+          ),
+          stats: {
+            ...state.stats,
+            currentXP: state.stats.currentXP + xpGained,
+            totalLifetimeXP: newTotalXP,
+            level: newLevel,
+            streak: newStreak,
+            longestStreak: Math.max(state.stats.longestStreak || 0, newStreak),
+            lastActiveDate: today,
+            dailyXP: filteredDailyXP,
+          },
+        });
+
+        return { xp: xpGained, leveledUp, newLevel };
+      },
+
+      deleteTask: (id) => {
+        set((state) => ({
+          tasks: state.tasks.filter((t) => t.id !== id),
+        }));
+      },
+
+      toggleTheme: () => {
+        set((state) => {
+          const newTheme = state.theme === 'dark' ? 'light' : 'dark';
+          document.documentElement.classList.toggle('dark', newTheme === 'dark');
+          return { theme: newTheme };
+        });
+      },
+
+      // Goal Actions
+      addGoal: (goalData) => {
+        const newGoal: Goal = {
+          ...goalData,
+          id: crypto.randomUUID(),
+          createdAt: Date.now(),
+          completed: false,
+          consecutiveDays: 0,
+          history: [],
+        };
+
+        // Generate initial tasks for all exercises
+        const newTasks: Task[] = [];
+
+        if (newGoal.type === 'progressive') {
+          // For progressive goals, generate a task for each exercise
+          newGoal.exercises.forEach(exercise => {
+            const task = generateGoalTask(newGoal, exercise);
+            if (task) newTasks.push(task);
+          });
+        } else if (newGoal.type === 'frequency' && newGoal.exercises.length > 0) {
+          // For frequency with intensity, generate tasks for exercises
+          newGoal.exercises.forEach(exercise => {
+            const task = generateGoalTask(newGoal, exercise);
+            if (task) newTasks.push(task);
+          });
+        } else {
+          // For accumulator or simple frequency
+          const task = generateGoalTask(newGoal);
+          if (task) newTasks.push(task);
+        }
+
+        set((state) => ({
+          goals: [newGoal, ...state.goals],
+          tasks: [...newTasks, ...state.tasks],
+        }));
+      },
+
+      deleteGoal: (id) => {
+        set((state) => ({
+          goals: state.goals.filter((g) => g.id !== id),
+          tasks: state.tasks.filter((t) => t.goalId !== id),
+        }));
+      },
+
+      completeGoalTask: (taskId, actualAmount) => {
+        const state = get();
+        const task = state.tasks.find(t => t.id === taskId);
+        if (!task?.goalId) return { xp: 0, leveledUp: false, newLevel: state.stats.level };
+
+        // Complete the task first and get XP
+        const result = get().completeTask(taskId);
+
+        const goal = get().goals.find(g => g.id === task.goalId);
+        if (!goal) return result;
+
+        const today = getTodayDate();
+
+        // Handle based on goal type
+        if (goal.type === 'progressive' && task.exerciseId) {
+          // Find the exercise and update it
           const exercise = goal.exercises.find(e => e.id === task.exerciseId);
-          if (exercise) {
-            const newDaysAtTarget = exercise.daysAtCurrentTarget + 1;
-            // For frequency, increase intensity every 2 completed weeks (14 sessions for 7x/week)
-            const sessionsForIncrease = weeklyTarget * 2;
-            let newCurrentAmount = exercise.currentAmount;
+          if (!exercise) return result;
 
-            if (newDaysAtTarget >= sessionsForIncrease) {
-              newCurrentAmount = Math.min(
-                Math.ceil(exercise.currentAmount * 1.1), // 10% increase
-                exercise.targetAmount
-              );
-            }
+          const newDaysAtTarget = exercise.daysAtCurrentTarget + 1;
+          let newCurrentAmount = exercise.currentAmount;
 
-            updatedExercises = goal.exercises.map(e =>
-              e.id === task.exerciseId
-                ? {
-                  ...e,
-                  currentAmount: newCurrentAmount,
-                  daysAtCurrentTarget: newDaysAtTarget >= sessionsForIncrease ? 0 : newDaysAtTarget
-                }
-                : e
-            );
-          }
-        }
+          // After 3 consecutive days at this target, increase by 10% of the GAP (Target - Current)
+          // Formula: IncreaseAmount = Math.max(Math.ceil((Goal - Current) * 0.10), MinStep).
+          if (newDaysAtTarget >= 3) {
+            const gap = exercise.targetAmount - exercise.currentAmount;
+            const minStep = 2; // Minimum increment of 2 for meaningful progress
+            const increment = Math.max(Math.ceil(gap * 0.10), minStep);
 
-        set((state) => ({
-          goals: state.goals.map(g =>
-            g.id === task.goalId
-              ? {
-                ...g,
-                exercises: updatedExercises,
-                params: { ...g.params, weeklyProgress: newProgress },
-                history: [...g.history, { date: today, value: 1 }],
-                completed: isWeeklyComplete,
-                completedAt: isWeeklyComplete ? Date.now() : undefined,
-              }
-              : g
-          ),
-        }));
-
-        // Award weekly bonus if completed
-        if (isWeeklyComplete) {
-          const weeklyBonus = 50;
-          const newTotalXP = get().stats.totalLifetimeXP + weeklyBonus;
-          const newLevel = calculateLevel(newTotalXP);
-
-          const updatedDailyXP = [...get().stats.dailyXP];
-          const todayEntry = updatedDailyXP.find(d => d.date === today);
-          if (todayEntry) {
-            todayEntry.xp += weeklyBonus;
-          } else {
-            updatedDailyXP.push({ date: today, xp: weeklyBonus });
+            newCurrentAmount = exercise.currentAmount + increment;
+            // Don't exceed target
+            newCurrentAmount = Math.min(newCurrentAmount, exercise.targetAmount);
           }
 
-          set((state) => ({
-            stats: {
-              ...state.stats,
-              totalLifetimeXP: newTotalXP,
-              level: newLevel,
-              dailyXP: updatedDailyXP,
-            }
-          }));
-        }
-      }
-
-      if (goal.type === 'accumulator') {
-        // Accumulator progress is handled by updateAccumulatorProgress
-      }
-
-      return result;
-    },
-
-    overclockTask: (taskId, actualAmount) => {
-      const state = get();
-      const task = state.tasks.find(t => t.id === taskId);
-      if (!task?.goalId || !task.requiredAmount) return { bonusXP: 0 };
-
-      const goal = state.goals.find(g => g.id === task.goalId);
-      if (!goal) return { bonusXP: 0 };
-
-      const excess = actualAmount - task.requiredAmount;
-      if (excess <= 0) return { bonusXP: 0 };
-
-      // Calculate bonus XP: 2 XP per excess unit, capped at 100
-      const bonusXP = Math.min(excess * 2, 100);
-
-      const today = getTodayDate();
-      const newTotalXP = state.stats.totalLifetimeXP + bonusXP;
-      const oldLevel = state.stats.level;
-      const newLevel = calculateLevel(newTotalXP);
-
-      // Update daily XP
-      const updatedDailyXP = [...state.stats.dailyXP];
-      const todayEntry = updatedDailyXP.find(d => d.date === today);
-      if (todayEntry) {
-        todayEntry.xp += bonusXP;
-      } else {
-        updatedDailyXP.push({ date: today, xp: bonusXP });
-      }
-
-      // Fast-track the exercise if progressive
-      if (goal.type === 'progressive' && task.exerciseId) {
-        const boost = Math.ceil(excess * 0.5);
-        const exercise = goal.exercises.find(e => e.id === task.exerciseId);
-        if (exercise) {
-          const newCurrentAmount = Math.min(
-            exercise.targetAmount,
-            exercise.currentAmount + boost
-          );
-
-          // Create updated exercises and check if goal is now complete
           const updatedExercises = goal.exercises.map(e =>
             e.id === task.exerciseId
-              ? { ...e, currentAmount: newCurrentAmount, daysAtCurrentTarget: 0 }
+              ? {
+                ...e,
+                currentAmount: newCurrentAmount,
+                daysAtCurrentTarget: newDaysAtTarget >= 3 ? 0 : newDaysAtTarget
+              }
               : e
           );
 
-          // Check if ALL exercises have reached their targets
+          // Check if goal is complete (all exercises reached target)
           const isGoalComplete = updatedExercises.every(e => e.currentAmount >= e.targetAmount);
 
+          set((state) => ({
+            goals: state.goals.map(g =>
+              g.id === task.goalId
+                ? {
+                  ...g,
+                  exercises: updatedExercises,
+                  consecutiveDays: goal.consecutiveDays + 1,
+                  history: [...g.history, { date: today, value: actualAmount || task.requiredAmount || 0, exerciseId: task.exerciseId }],
+                  completed: isGoalComplete,
+                  completedAt: isGoalComplete ? Date.now() : undefined,
+                  streakBrokenDate: undefined, // Clear streak broken status on completion
+                  previousStreak: undefined,
+                }
+                : g
+            ),
+          }));
+
+          // Award bonus XP for completing the goal
+          if (isGoalComplete) {
+            const bonusXP = 1000;
+            // IMPORTANT: Re-get state to ensure we have latest XP values from the task completion above
+            const currentState = get();
+            const currentTotalXP = currentState.stats.totalLifetimeXP;
+            const newTotalXP = currentTotalXP + bonusXP;
+            const newLevel = calculateLevel(newTotalXP);
+
+            const updatedDailyXP = [...currentState.stats.dailyXP];
+            const todayEntry = updatedDailyXP.find(d => d.date === today);
+            if (todayEntry) {
+              todayEntry.xp += bonusXP;
+            } else {
+              updatedDailyXP.push({ date: today, xp: bonusXP });
+            }
+
+            set((state) => ({
+              stats: {
+                ...state.stats,
+                totalLifetimeXP: newTotalXP,
+                level: newLevel,
+                dailyXP: updatedDailyXP,
+              }
+            }));
+
+            // Trigger a toast or similar if needed, but UI handles that usually via level up or checking completed status
+          }
+        }
+
+        if (goal.type === 'frequency') {
+          const newProgress = (goal.params.weeklyProgress || 0) + 1;
+          const weeklyTarget = goal.params.weeklyTarget || 3;
+          const isWeeklyComplete = newProgress >= weeklyTarget;
+
+          // Update exercise intensity if there's an exercise
+          let updatedExercises = [...goal.exercises];
+          if (task.exerciseId) {
+            const exercise = goal.exercises.find(e => e.id === task.exerciseId);
+            if (exercise) {
+              const newDaysAtTarget = exercise.daysAtCurrentTarget + 1;
+              let newCurrentAmount = exercise.currentAmount;
+
+              // Frequency Progression: Use Adaptive Gap Formula
+              // User requested: "completion should be based on day not week" AND faster progression
+              // So we check simply for 3 successful completions (days/sessions), regardless of weeks.
+              const sessionsForIncrease = 3;
+
+              if (newDaysAtTarget >= sessionsForIncrease) {
+                const gap = exercise.targetAmount - exercise.currentAmount;
+                const minStep = 2; // Minimum increment of 2
+                const increment = Math.max(Math.ceil(gap * 0.10), minStep);
+
+                newCurrentAmount = Math.min(
+                  exercise.currentAmount + increment,
+                  exercise.targetAmount
+                );
+              }
+
+              updatedExercises = updatedExercises.map(e =>
+                e.id === task.exerciseId
+                  ? {
+                    ...e,
+                    currentAmount: newCurrentAmount,
+                    daysAtCurrentTarget: newDaysAtTarget >= sessionsForIncrease ? 0 : newDaysAtTarget
+                  }
+                  : e
+              );
+            }
+          }
+
+          set((state) => ({
+            goals: state.goals.map(g =>
+              g.id === task.goalId
+                ? {
+                  ...g,
+                  exercises: updatedExercises,
+                  params: { ...g.params, weeklyProgress: newProgress },
+                  history: [...g.history, { date: today, value: 1 }],
+                  completed: isWeeklyComplete,
+                  completedAt: isWeeklyComplete ? Date.now() : undefined,
+                  consecutiveDays: (() => {
+                    if (g.params.frequency === 'daily') {
+                      // For daily goals, increment if not done today (history check)
+                      const doneToday = g.history.some(h => h.date === today);
+                      return !doneToday ? g.consecutiveDays + 1 : g.consecutiveDays;
+                    }
+                    return (!g.completed && isWeeklyComplete) ? g.consecutiveDays + 1 : g.consecutiveDays;
+                  })(),
+                  streakBrokenDate: undefined, // Clear streak broken status on completion
+                  previousStreak: undefined,
+                }
+                : g
+            ),
+          }));
+
+          // Award weekly bonus if completed
+          if (isWeeklyComplete) {
+            const weeklyBonus = 50;
+            const newTotalXP = get().stats.totalLifetimeXP + weeklyBonus;
+            const newLevel = calculateLevel(newTotalXP);
+
+            const updatedDailyXP = [...get().stats.dailyXP];
+            const todayEntry = updatedDailyXP.find(d => d.date === today);
+            if (todayEntry) {
+              todayEntry.xp += weeklyBonus;
+            } else {
+              updatedDailyXP.push({ date: today, xp: weeklyBonus });
+            }
+
+            set((state) => ({
+              stats: {
+                ...state.stats,
+                totalLifetimeXP: newTotalXP,
+                level: newLevel,
+                dailyXP: updatedDailyXP,
+              }
+            }));
+          }
+        }
+
+        if (goal.type === 'accumulator') {
+          // Accumulator progress is handled by updateAccumulatorProgress
+        }
+
+        return result;
+      },
+
+      claimGoalRewards: (goalId: string) => {
+        const state = get();
+        const goal = state.goals.find(g => g.id === goalId);
+        if (!goal || !goal.completed || goal.rewardsClaimed) return;
+
+        const xpBonus = 1000;
+        const newTotalXP = state.stats.totalLifetimeXP + xpBonus;
+        const newLevel = calculateLevel(newTotalXP);
+        const today = getTodayDate();
+
+        const updatedDailyXP = [...state.stats.dailyXP];
+        const todayEntry = updatedDailyXP.find(d => d.date === today);
+        if (todayEntry) {
+          todayEntry.xp += xpBonus;
+        } else {
+          updatedDailyXP.push({ date: today, xp: xpBonus });
+        }
+
+        set(state => ({
+          goals: state.goals.map(g => g.id === goalId ? { ...g, rewardsClaimed: true } : g),
+          stats: {
+            ...state.stats,
+            totalLifetimeXP: newTotalXP,
+            level: newLevel,
+            dailyXP: updatedDailyXP
+          }
+        }));
+      },
+
+      overclockTask: (taskId, actualAmount) => {
+        const state = get();
+        const task = state.tasks.find(t => t.id === taskId);
+        if (!task?.goalId || !task.requiredAmount) return { bonusXP: 0 };
+
+        const goal = state.goals.find(g => g.id === task.goalId);
+        if (!goal) return { bonusXP: 0 };
+
+        const excess = actualAmount - task.requiredAmount;
+        if (excess <= 0) return { bonusXP: 0 };
+
+        // Calculate bonus XP: 2 XP per excess unit, capped at 100
+        const bonusXP = Math.min(excess * 2, 100);
+
+        const today = getTodayDate();
+        const newTotalXP = state.stats.totalLifetimeXP + bonusXP;
+        const oldLevel = state.stats.level;
+        const newLevel = calculateLevel(newTotalXP);
+
+        // Update daily XP
+        const updatedDailyXP = [...state.stats.dailyXP];
+        const todayEntry = updatedDailyXP.find(d => d.date === today);
+        if (todayEntry) {
+          todayEntry.xp += bonusXP;
+        } else {
+          updatedDailyXP.push({ date: today, xp: bonusXP });
+        }
+
+        // Fast-track the exercise if progressive
+        if (goal.type === 'progressive' && task.exerciseId) {
+          const boost = Math.ceil(excess * 0.5);
+          const exercise = goal.exercises.find(e => e.id === task.exerciseId);
+          if (exercise) {
+            const newCurrentAmount = Math.min(
+              exercise.targetAmount,
+              exercise.currentAmount + boost
+            );
+
+            // Create updated exercises and check if goal is now complete
+            const updatedExercises = goal.exercises.map(e =>
+              e.id === task.exerciseId
+                ? { ...e, currentAmount: newCurrentAmount, daysAtCurrentTarget: 0 }
+                : e
+            );
+
+            // Check if ALL exercises have reached their targets
+            const isGoalComplete = updatedExercises.every(e => e.currentAmount >= e.targetAmount);
+
+            set({
+              debugLeagueOverride: undefined,
+              tasks: state.tasks.map(t =>
+                t.id === taskId
+                  ? { ...t, overclocked: true, actualAmount }
+                  : t
+              ),
+              goals: state.goals.map(g =>
+                g.id === task.goalId
+                  ? {
+                    ...g,
+                    exercises: updatedExercises,
+                    completed: isGoalComplete,
+                    completedAt: isGoalComplete ? Date.now() : undefined,
+                    streakBrokenDate: undefined, // Clear streak broken status on completion
+                    previousStreak: undefined,
+                  }
+                  : g
+              ),
+              stats: {
+                ...state.stats,
+                totalLifetimeXP: newTotalXP,
+                level: newLevel,
+                dailyXP: updatedDailyXP,
+              },
+            });
+
+            // Award goal completion bonus if just completed
+            // Award goal completion bonus if just completed
+            if (isGoalComplete) {
+              const goalBonus = 1000;
+              // Use newTotalXP (which includes overclock bonus) + goalBonus
+              const finalXP = newTotalXP + goalBonus;
+              const finalLevel = calculateLevel(finalXP);
+              set((state) => ({
+                stats: {
+                  ...state.stats,
+                  totalLifetimeXP: finalXP,
+                  level: finalLevel,
+                }
+              }));
+            }
+          }
+        } else {
           set({
             debugLeagueOverride: undefined,
             tasks: state.tasks.map(t =>
               t.id === taskId
                 ? { ...t, overclocked: true, actualAmount }
                 : t
-            ),
-            goals: state.goals.map(g =>
-              g.id === task.goalId
-                ? {
-                  ...g,
-                  exercises: updatedExercises,
-                  completed: isGoalComplete,
-                  completedAt: isGoalComplete ? Date.now() : undefined,
-                }
-                : g
             ),
             stats: {
               ...state.stats,
@@ -792,637 +898,749 @@ export const useGameStore = create<GameState>()(
               dailyXP: updatedDailyXP,
             },
           });
+        }
 
-          // Award goal completion bonus if just completed
-          // Award goal completion bonus if just completed
-          if (isGoalComplete) {
-            const goalBonus = 1000;
-            // Use newTotalXP (which includes overclock bonus) + goalBonus
-            const finalXP = newTotalXP + goalBonus;
-            const finalLevel = calculateLevel(finalXP);
-            set((state) => ({
-              stats: {
-                ...state.stats,
-                totalLifetimeXP: finalXP,
-                level: finalLevel,
-              }
-            }));
+        return { bonusXP };
+      },
+
+      completeHabitTask: (taskId) => {
+        const state = get();
+        const task = state.tasks.find(t => t.id === taskId);
+        if (!task?.habitId || task.completed) return { xp: 0, leveledUp: false, newLevel: state.stats.level };
+
+        const habit = state.habits.find(h => h.id === task.habitId);
+        if (!habit) return { xp: 0, leveledUp: false, newLevel: state.stats.level };
+
+        // Complete the task first
+        const result = get().completeTask(taskId);
+
+        const today = getTodayDate();
+
+        // Update habit stats (streak, history)
+        // Only prevent double counting if the habit was already marked completed today via the 'completeHabit' call
+        // But if there are multiple tasks for a habit (e.g. multiple exercises), we might want to track them all
+
+        const isAlreadyCompletedToday = habit.lastCompletedDate === today;
+        let newStreak = habit.streak;
+        let newLongestStreak = habit.longestStreak;
+
+        if (!isAlreadyCompletedToday) {
+          // Check if streak is continuous
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1 + DEBUG_DATE_OFFSET);
+          const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+          if (habit.lastCompletedDate === yesterdayStr) {
+            newStreak += 1;
+          } else if (habit.lastCompletedDate !== today) {
+            // If not yesterday and not today, streak resets
+            newStreak = 1;
+          }
+
+          if (newStreak > newLongestStreak) {
+            newLongestStreak = newStreak;
           }
         }
-      } else {
-        set({
-          debugLeagueOverride: undefined,
+
+        // Update Habit Exercise Progression (Atomic Habits Logic)
+        let updatedExercises = habit.exercises || [];
+        if (task.exerciseId) {
+          const exercise = updatedExercises.find(e => e.id === task.exerciseId);
+          if (exercise) {
+            const newDaysAtTarget = exercise.daysAtCurrentTarget + 1;
+            let newCurrentAmount = exercise.currentAmount;
+
+            // Atomic Habits: Start small (2 mins) for first 3 days (handled in wizard/creation)
+            // Here we handle progression: after 3 days at current, increase.
+
+            // If we are in the "Atomic Phase" (e.g. amount is <= 2 mins) behavior is standard progression
+            // But we should follow the "Adaptive Gap" formula now for everything.
+
+            if (newDaysAtTarget >= 3) {
+              const gap = exercise.targetAmount - exercise.currentAmount;
+              const minStep = 2; // Min step 2
+              // If gap is positive, increase
+              if (gap > 0) {
+                const increment = Math.max(Math.ceil(gap * 0.10), minStep);
+                newCurrentAmount = Math.min(exercise.currentAmount + increment, exercise.targetAmount);
+              }
+            }
+
+            updatedExercises = updatedExercises.map(e =>
+              e.id === task.exerciseId
+                ? { ...e, currentAmount: newCurrentAmount, daysAtCurrentTarget: newDaysAtTarget >= 3 ? 0 : newDaysAtTarget }
+                : e
+            );
+          }
+        }
+
+        // Add to history
+        const historyEntry = {
+          date: today,
+          value: task.actualAmount || task.requiredAmount || 1,
+          exerciseId: task.exerciseId
+        };
+
+        set((state) => ({
+          habits: state.habits.map(h =>
+            h.id === habit.id
+              ? {
+                ...h,
+                streak: newStreak,
+                exercises: updatedExercises,
+                longestStreak: newLongestStreak,
+                lastCompletedDate: today,
+                history: [...(h.history || []), historyEntry]
+              }
+              : h
+          )
+        }));
+
+        return result;
+      },
+
+      updateAccumulatorProgress: (taskId, amount) => {
+        const state = get();
+        const task = state.tasks.find(t => t.id === taskId);
+        if (!task?.goalId) return;
+
+        const goal = state.goals.find(g => g.id === task.goalId);
+        if (!goal || goal.type !== 'accumulator') return;
+
+        const today = getTodayDate();
+        const newTotal = (goal.params.totalCompleted || 0) + amount;
+        const targetValue = goal.params.targetValue || 0;
+        const isCompleted = newTotal >= targetValue;
+        const unit = goal.params.unit || 'items';
+
+        // Update goal progress
+        set((state) => ({
+          goals: state.goals.map(g =>
+            g.id === task.goalId
+              ? {
+                ...g,
+                params: { ...g.params, totalCompleted: newTotal },
+                history: [...g.history, { date: today, value: amount }],
+                completed: isCompleted,
+                completedAt: isCompleted ? Date.now() : undefined,
+                consecutiveDays: !g.completed && isCompleted ? g.consecutiveDays + 1 : g.consecutiveDays,
+                streakBrokenDate: undefined, // Clear streak broken status on completion
+                previousStreak: undefined,
+              }
+              : g
+          ),
+          // Update task title to show new progress
           tasks: state.tasks.map(t =>
             t.id === taskId
-              ? { ...t, overclocked: true, actualAmount }
+              ? {
+                ...t,
+                title: `${goal.title} (${newTotal}/${targetValue} ${unit})`,
+                currentProgress: newTotal,
+                // Complete the task ONLY when goal is complete
+                completed: isCompleted,
+                completedAt: isCompleted ? Date.now() : undefined,
+              }
               : t
           ),
+        }));
+
+        // Award XP for daily contribution + bonus for completing the goal
+        const xpGained = isCompleted ? XP_VALUES.medium + 1000 : XP_VALUES.trivial;
+        const newTotalXP = get().stats.totalLifetimeXP + xpGained;
+        const newLevel = calculateLevel(newTotalXP);
+
+        const updatedDailyXP = [...get().stats.dailyXP];
+        const todayEntry = updatedDailyXP.find(d => d.date === today);
+        if (todayEntry) {
+          todayEntry.xp += xpGained;
+        } else {
+          updatedDailyXP.push({ date: today, xp: xpGained });
+        }
+
+        set((state) => ({
           stats: {
             ...state.stats,
             totalLifetimeXP: newTotalXP,
             level: newLevel,
             dailyXP: updatedDailyXP,
-          },
-        });
-      }
+          }
+        }));
+      },
 
-      return { bonusXP };
-    },
+      moveGoalToHabit: (goalId) => {
+        const state = get();
+        const goal = state.goals.find(g => g.id === goalId);
+        if (!goal || !goal.completed) return;
 
-    completeHabitTask: (taskId) => {
-      const state = get();
-      const task = state.tasks.find(t => t.id === taskId);
-      if (!task?.habitId || task.completed) return { xp: 0, leveledUp: false, newLevel: state.stats.level };
+        const newHabit: Habit = {
+          id: crypto.randomUUID(),
+          title: goal.title,
+          originGoalId: goal.id,
+          exercises: goal.exercises.map(e => ({
+            ...e,
+            // Keep the final target amount as the daily goal
+            currentAmount: e.targetAmount,
+          })),
+          frequency: goal.params.frequency,
+          weeklyTarget: goal.params.weeklyTarget,
+          streak: 0,
+          longestStreak: 0,
+          history: [],
+          createdAt: Date.now(),
+        };
 
-      const habit = state.habits.find(h => h.id === task.habitId);
-      if (!habit) return { xp: 0, leveledUp: false, newLevel: state.stats.level };
+        set((state) => ({
+          habits: [newHabit, ...state.habits],
+          goals: state.goals.filter(g => g.id !== goalId),
+          tasks: state.tasks.filter(t => t.goalId !== goalId),
+        }));
+      },
 
-      // Complete the task first
-      const result = get().completeTask(taskId);
+      addHabit: (habitData) => {
+        const newHabit = {
+          ...habitData,
+          id: crypto.randomUUID(),
+          createdAt: Date.now(),
+          streak: 0,
+          longestStreak: 0,
+          history: [],
+        };
 
-      const today = getTodayDate();
+        set((state) => ({
+          habits: [newHabit, ...state.habits],
+        }));
 
-      // Update habit stats (streak, history)
-      // Only prevent double counting if the habit was already marked completed today via the 'completeHabit' call
-      // But if there are multiple tasks for a habit (e.g. multiple exercises), we might want to track them all
+        // Generate task immediately if applicable
+        const state = get();
+        if (newHabit.exercises.length > 0) {
+          newHabit.exercises.forEach(exercise => {
+            const newTask = generateHabitTask(newHabit, exercise);
+            if (newTask) {
+              set((state) => ({ tasks: [newTask, ...state.tasks] }));
+            }
+          });
+        } else {
+          const newTask = generateHabitTask(newHabit);
+          if (newTask) {
+            set((state) => ({ tasks: [newTask, ...state.tasks] }));
+          }
+        }
+      },
 
-      const isAlreadyCompletedToday = habit.lastCompletedDate === today;
-      let newStreak = habit.streak;
-      let newLongestStreak = habit.longestStreak;
+      deleteHabit: (id) => {
+        set((state) => ({
+          habits: state.habits.filter((h) => h.id !== id),
+        }));
+      },
 
-      if (!isAlreadyCompletedToday) {
-        // Check if streak is continuous
+      completeHabit: (id) => {
+        const state = get();
+        const habit = state.habits.find(h => h.id === id);
+        if (!habit) return { xp: 0, leveledUp: false, newLevel: state.stats.level };
+
+        const today = getTodayDate();
+        if (habit.lastCompletedDate === today) {
+          return { xp: 0, leveledUp: false, newLevel: state.stats.level };
+        }
+
+        // Award XP for completing habit (medium difficulty by default)
+        const xpGained = 25;
+        const newTotalXP = state.stats.totalLifetimeXP + xpGained;
+        const oldLevel = state.stats.level;
+        const newLevel = calculateLevel(newTotalXP);
+        const leveledUp = newLevel > oldLevel;
+
+        // Calculate streak
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = yesterday.toISOString().split('T')[0];
 
+        let newStreak = habit.streak;
         if (habit.lastCompletedDate === yesterdayStr) {
-          newStreak += 1;
-        } else {
+          newStreak = habit.streak + 1;
+        } else if (habit.lastCompletedDate !== today) {
           newStreak = 1;
         }
 
-        if (newStreak > newLongestStreak) {
-          newLongestStreak = newStreak;
+        const newLongestStreak = Math.max(habit.longestStreak, newStreak);
+
+        // Update daily XP tracking
+        const updatedDailyXP = [...state.stats.dailyXP];
+        const todayEntry = updatedDailyXP.find(d => d.date === today);
+        if (todayEntry) {
+          todayEntry.xp += xpGained;
+        } else {
+          updatedDailyXP.push({ date: today, xp: xpGained });
         }
-      }
 
-      // Add to history
-      const historyEntry = {
-        date: today,
-        value: task.actualAmount || task.requiredAmount || 1,
-        exerciseId: task.exerciseId
-      };
-
-      set((state) => ({
-        habits: state.habits.map(h =>
-          h.id === habit.id
-            ? {
-              ...h,
-              streak: newStreak,
-              longestStreak: newLongestStreak,
-              lastCompletedDate: today,
-              history: [...(h.history || []), historyEntry]
-            }
-            : h
-        )
-      }));
-
-      return result;
-    },
-
-    updateAccumulatorProgress: (taskId, amount) => {
-      const state = get();
-      const task = state.tasks.find(t => t.id === taskId);
-      if (!task?.goalId) return;
-
-      const goal = state.goals.find(g => g.id === task.goalId);
-      if (!goal || goal.type !== 'accumulator') return;
-
-      const today = getTodayDate();
-      const newTotal = (goal.params.totalCompleted || 0) + amount;
-      const targetValue = goal.params.targetValue || 0;
-      const isCompleted = newTotal >= targetValue;
-      const unit = goal.params.unit || 'items';
-
-      // Update goal progress
-      set((state) => ({
-        goals: state.goals.map(g =>
-          g.id === task.goalId
-            ? {
-              ...g,
-              params: { ...g.params, totalCompleted: newTotal },
-              history: [...g.history, { date: today, value: amount }],
-              completed: isCompleted,
-              completedAt: isCompleted ? Date.now() : undefined,
-            }
-            : g
-        ),
-        // Update task title to show new progress
-        tasks: state.tasks.map(t =>
-          t.id === taskId
-            ? {
-              ...t,
-              title: `${goal.title} (${newTotal}/${targetValue} ${unit})`,
-              currentProgress: newTotal,
-              // Complete the task ONLY when goal is complete
-              completed: isCompleted,
-              completedAt: isCompleted ? Date.now() : undefined,
-            }
-            : t
-        ),
-      }));
-
-      // Award XP for daily contribution + bonus for completing the goal
-      const xpGained = isCompleted ? XP_VALUES.medium + 1000 : XP_VALUES.trivial;
-      const newTotalXP = get().stats.totalLifetimeXP + xpGained;
-      const newLevel = calculateLevel(newTotalXP);
-
-      const updatedDailyXP = [...get().stats.dailyXP];
-      const todayEntry = updatedDailyXP.find(d => d.date === today);
-      if (todayEntry) {
-        todayEntry.xp += xpGained;
-      } else {
-        updatedDailyXP.push({ date: today, xp: xpGained });
-      }
-
-      set((state) => ({
-        stats: {
-          ...state.stats,
-          totalLifetimeXP: newTotalXP,
-          level: newLevel,
-          dailyXP: updatedDailyXP,
-        }
-      }));
-    },
-
-    moveGoalToHabit: (goalId) => {
-      const state = get();
-      const goal = state.goals.find(g => g.id === goalId);
-      if (!goal || !goal.completed) return;
-
-      const newHabit: Habit = {
-        id: crypto.randomUUID(),
-        title: goal.title,
-        originGoalId: goal.id,
-        exercises: goal.exercises.map(e => ({
-          ...e,
-          // Keep the final target amount as the daily goal
-          currentAmount: e.targetAmount,
-        })),
-        frequency: goal.params.frequency,
-        weeklyTarget: goal.params.weeklyTarget,
-        streak: 0,
-        longestStreak: 0,
-        history: [],
-        createdAt: Date.now(),
-      };
-
-      set((state) => ({
-        habits: [newHabit, ...state.habits],
-        goals: state.goals.filter(g => g.id !== goalId),
-        tasks: state.tasks.filter(t => t.goalId !== goalId),
-      }));
-    },
-
-    addHabit: (habitData) => {
-      const newHabit = {
-        ...habitData,
-        id: crypto.randomUUID(),
-        createdAt: Date.now(),
-        streak: 0,
-        longestStreak: 0,
-        history: [],
-      };
-
-      set((state) => ({
-        habits: [newHabit, ...state.habits],
-      }));
-
-      // Generate task immediately if applicable
-      const state = get();
-      if (newHabit.exercises.length > 0) {
-        newHabit.exercises.forEach(exercise => {
-          const newTask = generateHabitTask(newHabit, exercise);
-          if (newTask) {
-            set((state) => ({ tasks: [newTask, ...state.tasks] }));
-          }
+        set({
+          habits: state.habits.map(h =>
+            h.id === id
+              ? { ...h, lastCompletedDate: today, streak: newStreak, longestStreak: newLongestStreak }
+              : h
+          ),
+          stats: {
+            ...state.stats,
+            currentXP: state.stats.currentXP + xpGained,
+            totalLifetimeXP: newTotalXP,
+            level: newLevel,
+            lastActiveDate: today,
+            dailyXP: updatedDailyXP,
+          },
         });
-      } else {
-        const newTask = generateHabitTask(newHabit);
-        if (newTask) {
-          set((state) => ({ tasks: [newTask, ...state.tasks] }));
+
+        return { xp: xpGained, leveledUp, newLevel };
+      },
+
+      debugResetAll: () => {
+        set({
+          tasks: [],
+          goals: [],
+          habits: [],
+          stats: {
+            currentXP: 0,
+            totalLifetimeXP: 0,
+            level: 1,
+            streak: 0,
+            longestStreak: 0,
+            lastActiveDate: null, // Reset this so streak logic works like new
+            dailyXP: [],
+          },
+          debugLeagueOverride: undefined,
+          theme: 'dark'
+        });
+        // Also reset debug offset
+        DEBUG_DATE_OFFSET = 0;
+        console.log("Full Reset Completed");
+      },
+
+      checkAndGenerateDailyTasks: () => {
+        const state = get();
+        const today = getTodayDate();
+        const todayStart = new Date(today).getTime();
+        const startOfWeek = getStartOfWeek();
+
+        // --- GLOBAL STREAK RESET CHECK ---
+        // Verify if global streak should be broken (missed yesterday)
+        let newGlobalStreak = state.stats.streak;
+        if (state.stats.streak > 0) {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1 + DEBUG_DATE_OFFSET);
+          const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+          if (state.stats.lastActiveDate !== yesterdayStr && state.stats.lastActiveDate !== today) {
+            console.log("Global streak broken! Last active:", state.stats.lastActiveDate, "Yesterday:", yesterdayStr);
+            newGlobalStreak = 0;
+          }
         }
-      }
-    },
 
-    deleteHabit: (id) => {
-      set((state) => ({
-        habits: state.habits.filter((h) => h.id !== id),
-      }));
-    },
+        // --- CLEANUP LOGIC ---
+        // 1. Remove ALL completed tasks from previous days (keep today's completed)
+        // 2. Remove UNCOMPLETED GENERATED tasks from previous days (habits/daily goals)
+        // 3. Keep UNCOMPLETED MANUAL tasks forever until done
 
-    completeHabit: (id) => {
-      const state = get();
-      const habit = state.habits.find(h => h.id === id);
-      if (!habit) return { xp: 0, leveledUp: false, newLevel: state.stats.level };
+        // --- HABIT STREAK RESET CHECK ---
+        let habitsUpdated = false;
+        let updatedHabits = state.habits.map(habit => {
+          if (habit.streak > 0) {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1 + DEBUG_DATE_OFFSET);
+            const yesterdayStr = yesterday.toISOString().split('T')[0];
 
-      const today = getTodayDate();
-      if (habit.lastCompletedDate === today) {
-        return { xp: 0, leveledUp: false, newLevel: state.stats.level };
-      }
+            // Check if completed yesterday OR today
+            if (habit.lastCompletedDate !== yesterdayStr && habit.lastCompletedDate !== today) {
+              habitsUpdated = true;
+              return { ...habit, streak: 0 };
+            }
+          }
+          return habit;
+        });
 
-      // Award XP for completing habit (medium difficulty by default)
-      const xpGained = 25;
-      const newTotalXP = state.stats.totalLifetimeXP + xpGained;
-      const oldLevel = state.stats.level;
-      const newLevel = calculateLevel(newTotalXP);
-      const leveledUp = newLevel > oldLevel;
+        const cleanedTasks = state.tasks.filter(task => {
+          // Keep manual tasks always (unless completed before today, user said clear completed tasks from yesterday)
+          if (task.completed) {
+            if (!task.completedAt) return false;
+            return new Date(task.completedAt).toISOString().split('T')[0] === today;
+          }
 
-      // Calculate streak
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
+          if (task.isGoalTask || task.isHabitTask || task.dueDate === 'daily') {
+            return task.createdAt >= todayStart;
+          }
 
-      let newStreak = habit.streak;
-      if (habit.lastCompletedDate === yesterdayStr) {
-        newStreak = habit.streak + 1;
-      } else if (habit.lastCompletedDate !== today) {
-        newStreak = 1;
-      }
+          return true;
+        });
 
-      const newLongestStreak = Math.max(habit.longestStreak, newStreak);
-
-      // Update daily XP tracking
-      const updatedDailyXP = [...state.stats.dailyXP];
-      const todayEntry = updatedDailyXP.find(d => d.date === today);
-      if (todayEntry) {
-        todayEntry.xp += xpGained;
-      } else {
-        updatedDailyXP.push({ date: today, xp: xpGained });
-      }
-
-      set({
-        habits: state.habits.map(h =>
-          h.id === id
-            ? { ...h, lastCompletedDate: today, streak: newStreak, longestStreak: newLongestStreak }
-            : h
-        ),
-        stats: {
-          ...state.stats,
-          currentXP: state.stats.currentXP + xpGained,
-          totalLifetimeXP: newTotalXP,
-          level: newLevel,
-          lastActiveDate: today,
-          dailyXP: updatedDailyXP,
-        },
-      });
-
-      return { xp: xpGained, leveledUp, newLevel };
-    },
-
-    checkAndGenerateDailyTasks: () => {
-      const state = get();
-      const today = getTodayDate();
-      const todayStart = new Date(today).getTime();
-      const startOfWeek = getStartOfWeek();
-
-      state.goals.forEach(goal => {
-        if (goal.completed) return;
+        // Prepare new tasks list, starting with cleaned tasks
+        let newTasks = [...cleanedTasks];
+        let goalsUpdated = false;
+        let updatedGoals = [...state.goals];
 
         // Reset weekly progress if new week for frequency goals
-        if (goal.type === 'frequency' && goal.params.lastWeekReset !== startOfWeek) {
-          set((state) => ({
-            goals: state.goals.map(g =>
-              g.id === goal.id
-                ? {
-                  ...g,
-                  params: { ...g.params, weeklyProgress: 0, lastWeekReset: startOfWeek }
-                }
-                : g
-            ),
-          }));
-        }
+        updatedGoals = updatedGoals.map(g => {
+          if (g.type === 'frequency' && g.params.lastWeekReset !== startOfWeek) {
+            goalsUpdated = true;
+            return {
+              ...g,
+              params: { ...g.params, weeklyProgress: 0, lastWeekReset: startOfWeek }
+            };
+          }
+          return g;
+        });
 
-        if (goal.type === 'progressive') {
-          // Generate task for each exercise that doesn't have one today
-          goal.exercises.forEach(exercise => {
-            const existingTask = state.tasks.find(
-              t => t.goalId === goal.id &&
-                t.exerciseId === exercise.id &&
-                !t.completed &&
-                t.createdAt >= todayStart
-            );
+        // --- GENERATION LOGIC ---
 
-            if (!existingTask && goal.params.frequency === 'daily') {
-              const newTask = generateGoalTask(goal, exercise);
-              if (newTask) {
-                set((state) => ({
-                  tasks: [newTask, ...state.tasks],
-                }));
-              }
-            }
-          });
-        }
+        updatedGoals.forEach(goal => {
+          if (goal.completed) return;
 
-        if (goal.type === 'accumulator' && goal.params.frequency === 'daily') {
-          const existingTask = state.tasks.find(
-            t => t.goalId === goal.id && !t.completed && t.createdAt >= todayStart
-          );
+          // -- GOAL STREAK CHECK --
+          // Check if we missed yesterday for daily goals, causing a streak break
+          // Only if we had a streak > 0
 
-          if (!existingTask) {
-            const newTask = generateGoalTask(goal);
-            if (newTask) {
-              set((state) => ({
-                tasks: [newTask, ...state.tasks],
-              }));
+          let goalNeedsUpdate = false;
+          let newStreak = goal.consecutiveDays;
+          let streakBrokenDate = goal.streakBrokenDate;
+          let previousStreak = goal.previousStreak;
+
+          if (goal.params.frequency === 'daily' && goal.consecutiveDays > 0) {
+            // Check if we did it yesterday
+            // We check history for an entry from yesterday OR today (if already done today)
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1 + DEBUG_DATE_OFFSET);
+            const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+            // Check history for yesterday
+            const doneYesterday = goal.history.some(h => h.date === yesterdayStr);
+            const doneToday = goal.history.some(h => h.date === today); // If done today, streak is safe/incremented elsewhere
+
+            // If NOT done yesterday AND NOT done today (yet), it might be broken.
+            // Actually, if we are running this "at start of day" (generatetasks), "doneToday" is likely false.
+            // So if not done yesterday, streak IS broken (unless it's the very first day? no streak > 0 handles that).
+            // Wait, what if we just did it yesterday? doneYesterday would be true.
+
+            if (!doneYesterday && !doneToday) {
+              // Streak BROKEN
+              previousStreak = goal.consecutiveDays;
+              newStreak = 0;
+              streakBrokenDate = today;
+              goalNeedsUpdate = true;
             }
           }
-        }
 
-        if (goal.type === 'frequency') {
-          const weeklyProgress = goal.params.weeklyProgress || 0;
-          const weeklyTarget = goal.params.weeklyTarget || 3;
+          // If the goal's streak was broken, update it in the store
+          if (goalNeedsUpdate) {
+            goalsUpdated = true; // Mark as updated for batch set
+            // Update the local goal object for subsequent logic in this loop
+            goal.consecutiveDays = newStreak;
+            goal.streakBrokenDate = streakBrokenDate;
+            goal.previousStreak = previousStreak;
+          }
 
-          if (weeklyProgress < weeklyTarget) {
-            // Check if task exists for today
-            const existingTask = state.tasks.find(
+          if (goal.type === 'progressive') {
+            goal.exercises.forEach(exercise => {
+              const existingTask = newTasks.find(
+                t => t.goalId === goal.id &&
+                  t.exerciseId === exercise.id &&
+                  !t.completed &&
+                  t.createdAt >= todayStart
+              );
+
+              if (!existingTask && goal.params.frequency === 'daily') {
+                const newTask = generateGoalTask(goal, exercise);
+                if (newTask) newTasks.push(newTask);
+              }
+            });
+          }
+
+          if (goal.type === 'accumulator' && goal.params.frequency === 'daily') {
+            const existingTask = newTasks.find(
               t => t.goalId === goal.id && !t.completed && t.createdAt >= todayStart
             );
 
             if (!existingTask) {
-              if (goal.exercises.length > 0) {
-                goal.exercises.forEach(exercise => {
-                  const newTask = generateGoalTask(goal, exercise);
-                  if (newTask) {
-                    set((state) => ({
-                      tasks: [newTask, ...state.tasks],
-                    }));
-                  }
-                });
-              } else {
-                const newTask = generateGoalTask(goal);
-                if (newTask) {
-                  set((state) => ({
-                    tasks: [newTask, ...state.tasks],
-                  }));
+              const newTask = generateGoalTask(goal);
+              if (newTask) newTasks.push(newTask);
+            }
+          }
+
+          if (goal.type === 'frequency') {
+            const weeklyProgress = goal.params.weeklyProgress || 0;
+            const weeklyTarget = goal.params.weeklyTarget || 3;
+
+            if (weeklyProgress < weeklyTarget) {
+              // Check if task exists for today
+              const existingTask = newTasks.find(
+                t => t.goalId === goal.id && !t.completed && t.createdAt >= todayStart
+              );
+
+              if (!existingTask) {
+                if (goal.exercises.length > 0) {
+                  goal.exercises.forEach(exercise => {
+                    const newTask = generateGoalTask(goal, exercise);
+                    if (newTask) newTasks.push(newTask);
+                  });
+                } else {
+                  const newTask = generateGoalTask(goal);
+                  if (newTask) newTasks.push(newTask);
                 }
               }
             }
           }
-        }
-      });
+        });
 
-      // Generate habit tasks
-      state.habits.forEach(habit => {
-        // Check if habit was already completed today
-        if (habit.lastCompletedDate === today) return;
+        // Generate habit tasks
+        updatedHabits.forEach(habit => {
+          // Check if habit was already completed today
+          if (habit.lastCompletedDate === today) return;
 
-        if (habit.exercises.length > 0) {
-          // Generate task for each exercise
-          habit.exercises.forEach(exercise => {
-            const existingTask = state.tasks.find(
-              t => t.habitId === habit.id && t.exerciseId === exercise.id && !t.completed && t.createdAt >= todayStart
+          if (habit.exercises.length > 0) {
+            habit.exercises.forEach(exercise => {
+              const existingTask = newTasks.find(
+                t => t.habitId === habit.id && t.exerciseId === exercise.id && !t.completed && t.createdAt >= todayStart
+              );
+
+              if (!existingTask) {
+                const newTask = generateHabitTask(habit, exercise);
+                if (newTask) newTasks.push(newTask);
+              }
+            });
+          } else {
+            const existingTask = newTasks.find(
+              t => t.habitId === habit.id && !t.completed && t.createdAt >= todayStart
             );
 
             if (!existingTask) {
-              const newTask = generateHabitTask(habit, exercise);
-              if (newTask) {
-                set((state) => ({
-                  tasks: [newTask, ...state.tasks],
-                }));
-              }
-            }
-          });
-        } else {
-          // Simple habit without exercises
-          const existingTask = state.tasks.find(
-            t => t.habitId === habit.id && !t.completed && t.createdAt >= todayStart
-          );
-
-          if (!existingTask) {
-            const newTask = generateHabitTask(habit);
-            if (newTask) {
-              set((state) => ({
-                tasks: [newTask, ...state.tasks],
-              }));
+              const newTask = generateHabitTask(habit);
+              if (newTask) newTasks.push(newTask);
             }
           }
+        });
+
+        // Apply Status Updates
+        const finalStats = { ...state.stats };
+        if (newGlobalStreak !== state.stats.streak) {
+          finalStats.streak = newGlobalStreak;
         }
-      });
-    },
 
-    getXPForNextLevel: () => {
-      const { stats } = get();
-      const nextLevelXP = getXPForLevel(stats.level + 1);
-      return Math.ceil(nextLevelXP);
-    },
+        // Batch update the store
+        set((state) => ({
+          tasks: newTasks,
+          goals: goalsUpdated ? updatedGoals : state.goals,
+          habits: habitsUpdated ? updatedHabits : state.habits,
+          stats: finalStats // Apply updated stats (including global streak reset)
+        }));
+      },
 
-    getCurrentLevelProgress: () => {
-      const { stats } = get();
-      const currentLevelXP = getXPForLevel(stats.level);
-      const nextLevelXP = getXPForLevel(stats.level + 1);
-      const xpInCurrentLevel = stats.totalLifetimeXP - currentLevelXP;
-      const xpNeededForNextLevel = nextLevelXP - currentLevelXP;
+      getXPForNextLevel: () => {
+        const { stats } = get();
+        const nextLevelXP = getXPForLevel(stats.level + 1);
+        return Math.ceil(nextLevelXP);
+      },
 
-      if (xpNeededForNextLevel <= 0) return 0;
-      const progress = xpInCurrentLevel / xpNeededForNextLevel;
-      return Math.min(Math.max(progress, 0), 1);
-    },
+      getCurrentLevelProgress: () => {
+        const { stats } = get();
+        const currentLevelXP = getXPForLevel(stats.level);
+        const nextLevelXP = getXPForLevel(stats.level + 1);
+        const xpInCurrentLevel = stats.totalLifetimeXP - currentLevelXP;
+        const xpNeededForNextLevel = nextLevelXP - currentLevelXP;
 
-    getWeeklyAverageXP: () => {
-      const { stats } = get();
-      const last7Days = getLast7Days();
-      let totalXP = 0;
+        if (xpNeededForNextLevel <= 0) return 0;
+        const progress = xpInCurrentLevel / xpNeededForNextLevel;
+        return Math.min(Math.max(progress, 0), 1);
+      },
 
-      last7Days.forEach(date => {
-        const dayData = stats.dailyXP.find(d => d.date === date);
-        if (dayData) {
-          totalXP += dayData.xp;
-        }
-      });
+      getWeeklyAverageXP: () => {
+        const { stats } = get();
+        const last7Days = getLast7Days();
+        let totalXP = 0;
 
-      return Math.round(totalXP / 7);
-    },
+        last7Days.forEach(date => {
+          const dayData = stats.dailyXP.find(d => d.date === date);
+          if (dayData) {
+            totalXP += dayData.xp;
+          }
+        });
 
-    getMonthlyXP: () => {
-      const { stats } = get();
-      const currentMonthDays = getCurrentMonthDays();
-      let totalXP = 0;
+        return Math.round(totalXP / 7);
+      },
 
-      currentMonthDays.forEach(date => {
-        const dayData = stats.dailyXP.find(d => d.date === date);
-        if (dayData) {
-          totalXP += dayData.xp;
-        }
-      });
+      getMonthlyXP: () => {
+        const { stats } = get();
+        const currentMonthDays = getCurrentMonthDays();
+        let totalXP = 0;
 
-      return totalXP;
-    },
+        currentMonthDays.forEach(date => {
+          const dayData = stats.dailyXP.find(d => d.date === date);
+          if (dayData) {
+            totalXP += dayData.xp;
+          }
+        });
 
-    // DEBUGGING TOOL
-    debugIncreaseStreak: (days: number) => {
-      set(state => ({
-        stats: {
-          ...state.stats,
-          streak: state.stats.streak + days
-        }
-      }));
-    },
+        return totalXP;
+      },
 
-    debugSetLeague: (league: League) => {
-      // We can't easily force the computed league without changing XP.
-      // So we'll add enough XP to reach that league's threshold.
-      const thresholds = LEAGUE_THRESHOLDS;
-      const targetXP = thresholds[league];
-      const currentXP = get().getMonthlyXP();
-      const diff = targetXP - currentXP;
-
-      if (diff > 0) {
+      // DEBUGGING TOOL
+      debugIncreaseStreak: (days: number) => {
         set(state => ({
           stats: {
             ...state.stats,
-            dailyXP: [
-              ...state.stats.dailyXP,
-              { date: new Date().toISOString().split('T')[0], xp: diff }
-            ]
+            streak: state.stats.streak + days
           }
         }));
-      } else {
-        // Reset to 0 then add target (hacky but works for debug)
-        // Actually, reducing XP is hard with the current append-only log structure without filtering.
-        // For now, let's just assume we only go UP or clear everything. 
-        // A better way for VISUAL debug is to override the return of getLeague, but that requires state.
-        // Let's just create a temporary override in the store if needed, or better:
-        // Just accept we only test going UP for now, or use a "visual override" state field.
-      }
-    },
+      },
 
-    debugCycleLeague: (direction: 'next' | 'prev') => {
-      const currentLeague = get().getLeague();
-      const tiers: League[] = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'master', 'grandmaster', 'champion', 'legend', 'immortal'];
-      const index = tiers.indexOf(currentLeague);
-      let nextIndex = direction === 'next' ? index + 1 : index - 1;
+      debugSetLeague: (league: League) => {
+        // We can't easily force the computed league without changing XP.
+        // So we'll add enough XP to reach that league's threshold.
+        const thresholds = LEAGUE_THRESHOLDS;
+        const targetXP = thresholds[league];
+        const currentXP = get().getMonthlyXP();
+        const diff = targetXP - currentXP;
 
-      if (nextIndex >= tiers.length) nextIndex = 0;
-      if (nextIndex < 0) nextIndex = tiers.length - 1;
-
-      const nextLeague = tiers[nextIndex];
-
-      // To force visual update, we simply calculate needed XP and add it.
-      // Downward is hard. 
-      // INSTAD: Let's add a `debugLeagueOverride` to the store state? 
-      // User asked for "Next league" button which "just shows the badge".
-      // It's purely visual. I will add `debugLeagueOverride` to GameState.
-      set(state => ({ debugLeagueOverride: nextLeague }));
-    },
-
-    getLeague: () => {
-      const state = get();
-      if (state.debugLeagueOverride) return state.debugLeagueOverride;
-
-      const monthlyXP = state.getMonthlyXP();
-      if (monthlyXP >= LEAGUE_THRESHOLDS.immortal) return 'immortal';
-      if (monthlyXP >= LEAGUE_THRESHOLDS.legend) return 'legend';
-      if (monthlyXP >= LEAGUE_THRESHOLDS.champion) return 'champion';
-      if (monthlyXP >= LEAGUE_THRESHOLDS.grandmaster) return 'grandmaster';
-      if (monthlyXP >= LEAGUE_THRESHOLDS.master) return 'master';
-      if (monthlyXP >= LEAGUE_THRESHOLDS.diamond) return 'diamond';
-      if (monthlyXP >= LEAGUE_THRESHOLDS.platinum) return 'platinum';
-      if (monthlyXP >= LEAGUE_THRESHOLDS.gold) return 'gold';
-      if (monthlyXP >= LEAGUE_THRESHOLDS.silver) return 'silver';
-      return 'bronze';
-    },
-
-    getLeagueProgress: () => {
-      const monthlyXP = get().getMonthlyXP();
-      const currentLeague = get().getLeague();
-
-      const thresholds = LEAGUE_THRESHOLDS;
-      const tiers: League[] = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'master', 'grandmaster', 'champion', 'legend', 'immortal'];
-
-      // If we are at max league (immortal), show full progress or progress to next theoretical infinite tier
-      if (currentLeague === 'immortal') {
-        return { current: monthlyXP, needed: thresholds.immortal, nextLeague: null, percent: 100 };
-      }
-
-      const currentIndex = tiers.indexOf(currentLeague);
-      const nextLeague = tiers[currentIndex + 1];
-      const currentThreshold = thresholds[currentLeague];
-      const nextThreshold = thresholds[nextLeague];
-
-      const xpInCurrentTier = monthlyXP - currentThreshold;
-      const xpNeededForNextTier = nextThreshold - currentThreshold;
-
-      const progress = (xpInCurrentTier / xpNeededForNextTier) * 100;
-      const minProgress = monthlyXP > 0 ? Math.max(3, progress) : 0;
-
-      return {
-        current: monthlyXP,
-        needed: nextThreshold,
-        nextLeague: nextLeague,
-        percent: Math.min(Math.max(minProgress, 0), 100)
-      };
-    },
-
-    // DEBUGGING TOOLS
-    debugIncreaseStreak: (days: number) => {
-      set(state => ({
-        stats: {
-          ...state.stats,
-          streak: state.stats.streak + days
+        if (diff > 0) {
+          set(state => ({
+            stats: {
+              ...state.stats,
+              dailyXP: [
+                ...state.stats.dailyXP,
+                { date: new Date().toISOString().split('T')[0], xp: diff }
+              ]
+            }
+          }));
+        } else {
+          // Reset to 0 then add target (hacky but works for debug)
+          // Actually, reducing XP is hard with the current append-only log structure without filtering.
+          // For now, let's just assume we only go UP or clear everything. 
+          // A better way for VISUAL debug is to override the return of getLeague, but that requires state.
+          // Let's just create a temporary override in the store if needed, or better:
+          // Just accept we only test going UP for now, or use a "visual override" state field.
         }
-      }));
-    },
+      },
 
-    debugAddXP: (amount: number) => {
-      const state = get();
-      const today = getTodayDate();
-      const newTotalXP = state.stats.totalLifetimeXP + amount;
-      const newLevel = calculateLevel(newTotalXP);
+      debugCycleLeague: (direction: 'next' | 'prev') => {
+        const tiers: League[] = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'master', 'grandmaster', 'champion', 'legend', 'immortal'];
 
-      const updatedDailyXP = [...state.stats.dailyXP];
-      const todayEntry = updatedDailyXP.find(d => d.date === today);
-      if (todayEntry) {
-        todayEntry.xp += amount;
-      } else {
-        updatedDailyXP.push({ date: today, xp: amount });
-      }
+        // Use override for visual testing - get current override or actual league
+        const state = get();
+        const currentLeague = state.debugLeagueOverride || state.getLeague();
+        const index = tiers.indexOf(currentLeague);
+        let nextIndex = direction === 'next' ? index + 1 : index - 1;
 
-      set({
-        debugLeagueOverride: undefined, // Clear override so XP determines league
-        stats: {
-          ...state.stats,
-          currentXP: state.stats.currentXP + amount,
-          totalLifetimeXP: newTotalXP,
-          level: newLevel,
-          dailyXP: updatedDailyXP,
-        },
-      });
-    },
+        if (nextIndex >= tiers.length) nextIndex = 0;
+        if (nextIndex < 0) nextIndex = tiers.length - 1;
 
-    getGoalTasks: () => {
-      return get().tasks.filter(t => t.isGoalTask);
-    },
+        const nextLeague = tiers[nextIndex];
 
-    getCustomTasks: () => {
-      return get().tasks.filter(t => !t.isGoalTask && !t.isHabitTask);
-    },
+        // Simply set the override - no XP manipulation needed for visual testing
+        set({ debugLeagueOverride: nextLeague });
+      },
 
-    getHabitTasks: () => {
-      return get().tasks.filter(t => t.isHabitTask);
-    },
-  })
-  // PERSISTENCE DISABLED FOR TESTING
-  // {
-  //   name: 'questlife-storage',
-  //   onRehydrateStorage: () => (state) => {
-  //     if (state) {
-  //       document.documentElement.classList.toggle('dark', state.theme === 'dark');
-  //     }
-  //   },
-  // }
-  // )
+      getLeague: () => {
+        const state = get();
+        if (state.debugLeagueOverride) return state.debugLeagueOverride;
+
+        const monthlyXP = state.getMonthlyXP();
+        if (monthlyXP >= LEAGUE_THRESHOLDS.immortal) return 'immortal';
+        if (monthlyXP >= LEAGUE_THRESHOLDS.legend) return 'legend';
+        if (monthlyXP >= LEAGUE_THRESHOLDS.champion) return 'champion';
+        if (monthlyXP >= LEAGUE_THRESHOLDS.grandmaster) return 'grandmaster';
+        if (monthlyXP >= LEAGUE_THRESHOLDS.master) return 'master';
+        if (monthlyXP >= LEAGUE_THRESHOLDS.diamond) return 'diamond';
+        if (monthlyXP >= LEAGUE_THRESHOLDS.platinum) return 'platinum';
+        if (monthlyXP >= LEAGUE_THRESHOLDS.gold) return 'gold';
+        if (monthlyXP >= LEAGUE_THRESHOLDS.silver) return 'silver';
+        return 'bronze';
+      },
+
+      getLeagueProgress: () => {
+        const monthlyXP = get().getMonthlyXP();
+        const currentLeague = get().getLeague();
+
+        const thresholds = LEAGUE_THRESHOLDS;
+        const tiers: League[] = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'master', 'grandmaster', 'champion', 'legend', 'immortal'];
+
+        // If we are at max league (immortal), show full progress or progress to next theoretical infinite tier
+        if (currentLeague === 'immortal') {
+          return { current: monthlyXP, needed: thresholds.immortal, nextLeague: null, percent: 100 };
+        }
+
+        const currentIndex = tiers.indexOf(currentLeague);
+        const nextLeague = tiers[currentIndex + 1];
+        const currentThreshold = thresholds[currentLeague];
+        const nextThreshold = thresholds[nextLeague];
+
+        const xpInCurrentTier = monthlyXP - currentThreshold;
+        const xpNeededForNextTier = nextThreshold - currentThreshold;
+
+        const progress = (xpInCurrentTier / xpNeededForNextTier) * 100;
+        const minProgress = monthlyXP > 0 ? Math.max(3, progress) : 0;
+
+        return {
+          current: monthlyXP,
+          needed: nextThreshold,
+          nextLeague: nextLeague,
+          percent: Math.min(Math.max(minProgress, 0), 100)
+        };
+      },
+
+
+
+      debugAddXP: (amount: number) => {
+        const state = get();
+        const today = getTodayDate();
+        const newTotalXP = state.stats.totalLifetimeXP + amount;
+        const newLevel = calculateLevel(newTotalXP);
+
+        const updatedDailyXP = [...state.stats.dailyXP];
+        const todayEntry = updatedDailyXP.find(d => d.date === today);
+        if (todayEntry) {
+          todayEntry.xp += amount;
+        } else {
+          updatedDailyXP.push({ date: today, xp: amount });
+        }
+
+        set({
+          debugLeagueOverride: undefined, // Clear override so XP determines league
+          stats: {
+            ...state.stats,
+            currentXP: state.stats.currentXP + amount,
+            totalLifetimeXP: newTotalXP,
+            level: newLevel,
+            dailyXP: updatedDailyXP,
+          },
+        });
+      },
+
+      debugAdvanceDay: () => {
+        DEBUG_DATE_OFFSET += 1; // Increment global offset
+        get().checkAndGenerateDailyTasks(); // Run daily logic for the "new" day
+
+        // Removed the forced lastActiveDate update to prevent false "Activity" flag that protects streaks improperly.
+        // The UI will update on next interaction or we can rely on React component re-renders if they read DEBUG_DATE_OFFSET directly?
+        // Actually, trigger a dummy update to force re-render without affecting logic state.
+        set((state) => ({ theme: state.theme }));
+      },
+
+      getGoalTasks: () => {
+        return get().tasks.filter(t => t.isGoalTask);
+      },
+
+      getCustomTasks: () => {
+        return get().tasks.filter(t => !t.isGoalTask && !t.isHabitTask);
+      },
+
+      getHabitTasks: () => {
+        return get().tasks.filter(t => t.isHabitTask);
+      },
+    }),
+    {
+      name: 'questlife-storage',
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          document.documentElement.classList.toggle('dark', state.theme === 'dark');
+        }
+      },
+    }
+  )
 );
 
 // Initialize dark mode

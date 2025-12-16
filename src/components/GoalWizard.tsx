@@ -38,7 +38,6 @@ const unitPresets: Record<GoalTemplate, { label: string; value: GoalExercise['un
   ],
   meditation: [
     { label: 'Minutes', value: 'minutes' },
-    { label: 'Sessions', value: 'sessions' },
   ],
   custom: [
     { label: 'Reps', value: 'reps' },
@@ -94,10 +93,11 @@ export const GoalWizard = () => {
       setFrequency('weekly');
       setAccumulatorUnit('books');
     } else if (t.value === 'meditation') {
-      setFrequency('weekly');
-      setWeeklyTarget(3);
-      // For habits, allow simple frequency
-      setExercises([{ name: '', startAmount: 1, targetAmount: 1, unit: 'sessions' }]);
+      // Atomic Habits: Start with 2-minute rule, daily by default
+      setFrequency('daily');
+      setWeeklyTarget(7);
+      // Start at 2 minutes (Two-Minute Rule), target set by user (default 30 mins)
+      setExercises([{ name: '', startAmount: 2, targetAmount: 30, unit: 'minutes' }]);
     } else {
       setExercises([]);
     }
@@ -125,17 +125,22 @@ export const GoalWizard = () => {
     // Build exercises array with proper IDs
     const builtExercises: GoalExercise[] = exercises
       .filter(e => e.name?.trim())
-      .map(e => ({
-        id: crypto.randomUUID(),
-        name: e.name!.trim(),
-        targetAmount: e.targetAmount || 50,
-        startAmount: e.startAmount || 10,
-        // FIX: currentAmount starts at startAmount exactly
-        // First TASK will be at startAmount, then increases by 5% after 3 consecutive completions
-        currentAmount: e.startAmount || 10,
-        unit: e.unit || 'reps',
-        daysAtCurrentTarget: 0,
-      }));
+      .map(e => {
+        // Atomic Habits (Two-Minute Rule): For habits with minutes, always start at 2 mins
+        const isAtomicHabit = template === 'meditation' && e.unit === 'minutes';
+        const startingAmount = isAtomicHabit ? 2 : (e.startAmount || 10);
+
+        return {
+          id: crypto.randomUUID(),
+          name: e.name!.trim(),
+          targetAmount: e.targetAmount || 50,
+          startAmount: e.startAmount || 10, // Keep original for reference
+          // Atomic Habits: Start at 2 mins regardless of input
+          currentAmount: startingAmount,
+          unit: e.unit || 'reps',
+          daysAtCurrentTarget: 0,
+        };
+      });
 
     addGoal({
       title: title.trim(),
@@ -313,27 +318,59 @@ export const GoalWizard = () => {
                         </div>
                       )}
 
-                      {/* Frequency for habits */}
+                      {/* Frequency for habits/intensity */}
                       {goalType === 'frequency' && (
                         <div>
-                          <label className="text-xs font-medium text-muted-foreground mb-2 block">Times per Week</label>
-                          <div className="flex gap-2">
-                            {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-                              <button
-                                key={n}
-                                type="button"
-                                onClick={() => setWeeklyTarget(n)}
-                                className={cn(
-                                  "flex-1 h-10 rounded-lg font-mono text-sm transition-all",
-                                  weeklyTarget === n
-                                    ? "bg-success text-success-foreground"
-                                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
-                                )}
-                              >
-                                {n}
-                              </button>
-                            ))}
+                          <label className="text-xs font-medium text-muted-foreground mb-2 block">Schedule</label>
+                          <div className="flex gap-2 mb-3">
+                            <button
+                              type="button"
+                              onClick={() => { setFrequency('daily'); setWeeklyTarget(7); }}
+                              className={cn(
+                                "flex-1 py-2 px-4 rounded-lg border text-sm font-medium transition-all",
+                                frequency === 'daily'
+                                  ? "border-success bg-success/10 text-success"
+                                  : "border-border/50 text-muted-foreground hover:bg-muted/50"
+                              )}
+                            >
+                              Daily
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFrequency('weekly')}
+                              className={cn(
+                                "flex-1 py-2 px-4 rounded-lg border text-sm font-medium transition-all",
+                                frequency === 'weekly'
+                                  ? "border-success bg-success/10 text-success"
+                                  : "border-border/50 text-muted-foreground hover:bg-muted/50"
+                              )}
+                            >
+                              Weekly
+                            </button>
                           </div>
+
+                          {frequency === 'weekly' && (
+                            <div>
+                              <label className="text-[10px] text-muted-foreground mb-2 block">Days per Week</label>
+                              <div className="flex gap-2">
+                                {[1, 2, 3, 4, 5, 6].map((n) => (
+                                  <button
+                                    key={n}
+                                    type="button"
+                                    onClick={() => setWeeklyTarget(n)}
+                                    className={cn(
+                                      "flex-1 h-10 rounded-lg font-mono text-sm transition-all",
+                                      weeklyTarget === n
+                                        ? "bg-success text-success-foreground"
+                                        : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                                    )}
+                                  >
+                                    {n}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -517,9 +554,9 @@ export const GoalWizard = () => {
                       {/* Weekly frequency target */}
                       {(goalType === 'progressive' || goalType === 'accumulator') && frequency === 'weekly' && (
                         <div className="mt-4">
-                          <label className="text-xs font-medium text-muted-foreground mb-2 block">Times per Week</label>
+                          <label className="text-xs font-medium text-muted-foreground mb-2 block">Days per Week</label>
                           <div className="flex gap-2">
-                            {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                            {[1, 2, 3, 4, 5, 6].map((n) => (
                               <button
                                 key={n}
                                 type="button"

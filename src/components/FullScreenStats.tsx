@@ -1,4 +1,4 @@
-import { useGameStore } from '@/stores/gameStore';
+import { useGameStore, getTodayDate } from '@/stores/gameStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Zap, Trophy, Flame, Target, TrendingUp, Star,
@@ -16,13 +16,14 @@ interface FullScreenStatsProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigateToStreak?: () => void; // Added prompt for navigation
+  league?: any; // Accepting League type
 }
 
-export const FullScreenStats = ({ isOpen, onClose, onNavigateToStreak }: FullScreenStatsProps) => {
+export const FullScreenStats = ({ isOpen, onClose, onNavigateToStreak, league: leagueProp }: FullScreenStatsProps) => {
   const { stats, getLeague, getWeeklyAverageXP, getCurrentLevelProgress, tasks, goals, habits } = useGameStore();
   const [showHistory, setShowHistory] = useState(false);
 
-  const league = getLeague();
+  const league = leagueProp || getLeague();
   const weeklyAvg = getWeeklyAverageXP();
   const progress = getCurrentLevelProgress();
 
@@ -103,7 +104,10 @@ export const FullScreenStats = ({ isOpen, onClose, onNavigateToStreak }: FullScr
   const xpToNextLevel = Math.round(getXPForLevel(stats.level + 1) - stats.totalLifetimeXP);
 
   // Debug state
+  // Debug state
   const debugIncreaseStreak = useGameStore(state => state.debugIncreaseStreak);
+  const debugAdvanceDay = useGameStore(state => state.debugAdvanceDay);
+  const debugDate = getTodayDate();
 
   const handleStreakClick = () => {
     onClose();
@@ -160,9 +164,7 @@ export const FullScreenStats = ({ isOpen, onClose, onNavigateToStreak }: FullScr
                   className={cn("px-3 py-1 rounded-full flex items-center gap-1.5", currentLeague.bg)}
                   whileHover={{ scale: 1.05 }}
                 >
-                  <div className="w-8 h-8 relative -my-2 flex items-center justify-center">
-                    <LeagueBadge3D league={league} />
-                  </div>
+                  <LeagueIcon className={cn("w-4 h-4", currentLeague.color)} />
                   <span className={cn("text-xs font-semibold capitalize", currentLeague.color)}>
                     {league}
                   </span>
@@ -267,6 +269,16 @@ export const FullScreenStats = ({ isOpen, onClose, onNavigateToStreak }: FullScr
                         <Button variant="outline" size="sm" onClick={() => debugCycleLeague('prev')}>Prev League</Button>
                         <Button variant="outline" size="sm" onClick={() => debugCycleLeague('next')}>Next League</Button>
                       </div>
+                      <div className="flex gap-2 justify-center">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={debugAdvanceDay}
+                          className="w-full max-w-[200px]"
+                        >
+                          Simulate Next Day ({debugDate})
+                        </Button>
+                      </div>
                       <div className="flex gap-2 justify-center items-center">
                         <input
                           type="number"
@@ -287,6 +299,21 @@ export const FullScreenStats = ({ isOpen, onClose, onNavigateToStreak }: FullScr
                           }}
                         >
                           Get XP
+                        </Button>
+                      </div>
+                      <div className="flex gap-2 justify-center pt-2 border-t border-dashed border-muted-foreground/30">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm('ARE YOU SURE? This will wipe ALL data including streaks, tasks, and history.')) {
+                              useGameStore.getState().debugResetAll();
+                              onClose();
+                            }
+                          }}
+                          className="w-full bg-red-900/50 hover:bg-red-900 text-red-100"
+                        >
+                          RESET ALL DATA
                         </Button>
                       </div>
                     </div>

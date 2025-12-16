@@ -7,6 +7,7 @@ import { TaskTimer } from './TaskTimer';
 import { OverclockModal } from './OverclockModal';
 import { AccumulatorModal } from './AccumulatorModal';
 import { EditTaskModal } from './EditTaskModal';
+import { toast } from 'sonner';
 
 interface TaskCardProps {
   task: Task;
@@ -126,6 +127,17 @@ export const TaskCard = ({ task, index, onComplete, isGoalTask, isHabitTask }: T
       let result;
       if (task.isGoalTask && task.goalId) {
         result = completeGoalTask(task.id);
+
+        // Check if this task completion finished the goal (compare exercises to targets)
+        // We need to re-fetch the goal after completion to check its status
+        const updatedGoal = useGameStore.getState().goals.find(g => g.id === task.goalId);
+        if (updatedGoal?.completed && updatedGoal.completedAt) {
+          // Goal was just completed! Show the jackpot toast
+          toast.success('🔥 GOAL DESTROYED! +1000 XP', {
+            description: `You crushed "${updatedGoal.title}"!`,
+            duration: 5000,
+          });
+        }
       } else if (task.isHabitTask && task.habitId) {
         result = completeHabitTask(task.id);
       } else {
@@ -182,7 +194,7 @@ export const TaskCard = ({ task, index, onComplete, isGoalTask, isHabitTask }: T
         <div className="flex items-start gap-3 sm:gap-4 relative">
           {/* Come back tomorrow overlay for weekly habits/goals */}
           {task.completed && ((habit && habit.frequency === 'weekly') || (goal && goal.params?.frequency === 'weekly')) && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/60 backdrop-blur-[1px] rounded-2xl -m-2">
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/60 backdrop-blur-[1px] rounded-2xl -m-2 pointer-events-none">
               <span className="font-heading font-bold text-sm text-foreground/80 transform -rotate-2 px-3 py-1 bg-background/80 rounded-lg border border-border/50 shadow-sm">
                 Come back Tomorrow
               </span>

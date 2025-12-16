@@ -265,7 +265,7 @@ export const XPRing = ({ isLevelingUp = false }: XPRingProps) => {
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-auto overflow-visible">
           {/* Badge Container - sized for centered badge, overflow allowed */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-auto overflow-visible">
-            <div className="w-[170px] h-[170px] sm:w-[210px] sm:h-[210px] flex items-center justify-center overflow-visible">
+            <div className="w-[300px] h-[300px] sm:w-[350px] sm:h-[350px] flex items-center justify-center overflow-visible">
               <LeagueBadge3D league={league} level={level} />
             </div>
           </div>
@@ -325,6 +325,7 @@ export const XPRing = ({ isLevelingUp = false }: XPRingProps) => {
 
       <FullScreenStats
         isOpen={showStats}
+        league={league} // Sync visuals
         onClose={() => setShowStats(false)}
         onNavigateToStreak={() => {
           setShowStats(false);

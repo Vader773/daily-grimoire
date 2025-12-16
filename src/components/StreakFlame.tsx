@@ -30,19 +30,50 @@ export const StreakFlame = ({ streak, size = 'md', animated = true }: StreakFlam
     const config = sizeConfig[size];
 
     if (streak === 0) {
-        // Show dormant flame when no streak
+        // Show "Burnt" / Ash flame when no streak
+        // Uses same SVG structure but with ash/grey colors and slower/weaker animation
+        const ashColors = { primary: '#4B5563', secondary: '#6B7280', tertiary: '#9CA3AF' }; // Grey-500/600/700
+
         return (
             <div
-                className="relative flex items-center justify-center opacity-30"
+                className="relative flex items-center justify-center opacity-70"
                 style={{ width: config.width, height: config.height }}
             >
-                <svg viewBox="0 0 24 24" fill="none" className="w-full h-full">
+                {/* Ash flame SVG */}
+                <motion.svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    className="w-full h-full relative z-10"
+                    animate={animated ? {
+                        scaleY: [1, 0.95, 1],
+                        scaleX: [1, 1.02, 1]
+                    } : {}}
+                    transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                >
+                    <defs>
+                        <linearGradient id="ash-gradient" x1="0%" y1="100%" x2="0%" y2="0%">
+                            <stop offset="0%" stopColor="#1F2937" />
+                            <stop offset="50%" stopColor="#374151" />
+                            <stop offset="100%" stopColor="#6B7280" />
+                        </linearGradient>
+                    </defs>
+
+                    {/* Main flame body (dark/ashy) */}
                     <path
                         d="M12 2C12 2 4 10 4 15C4 19.4183 7.58172 23 12 23C16.4183 23 20 19.4183 20 15C20 10 12 2 12 2Z"
-                        fill="#6B7280"
-                        opacity="0.5"
+                        fill="url(#ash-gradient)"
+                        opacity="0.8"
                     />
-                </svg>
+
+                    {/* Inner ember (faint glow) */}
+                    <motion.path
+                        d="M12 12C12 12 9 15 9 17C9 18.6569 10.3431 20 12 20C13.6569 20 15 18.6569 15 17C15 15 12 12 12 12Z"
+                        fill="#EF4444" // Faint dead red ember
+                        opacity="0.3"
+                        animate={animated ? { opacity: [0.1, 0.3, 0.1] } : {}}
+                        transition={{ duration: 2, repeat: Infinity }}
+                    />
+                </motion.svg>
             </div>
         );
     }

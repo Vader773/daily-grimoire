@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Goal, useGameStore } from '@/stores/gameStore';
+import { Goal, useGameStore, getTodayDate, DEBUG_DATE_OFFSET } from '@/stores/gameStore';
 import { Target, Dumbbell, Brain, BookOpen, Trash2, ChevronDown, Flame, BarChart3, Trophy, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -32,7 +32,7 @@ const typeLabels = {
 };
 
 export const GoalCard = ({ goal, index }: GoalCardProps) => {
-  const { deleteGoal, moveGoalToHabit } = useGameStore();
+  const { deleteGoal, moveGoalToHabit, claimGoalRewards } = useGameStore();
   const [isExpanded, setIsExpanded] = useState(false);
 
   const Icon = templateIcons[goal.template || 'custom'];
@@ -66,10 +66,16 @@ export const GoalCard = ({ goal, index }: GoalCardProps) => {
     progress = (total / target) * 100;
     progressLabel = `${total}/${target} ${goal.params.unit || 'items'}`;
   } else if (goal.type === 'frequency') {
-    const weeklyProgress = goal.params.weeklyProgress || 0;
-    const weeklyTarget = goal.params.weeklyTarget || 3;
-    progress = (weeklyProgress / weeklyTarget) * 100;
-    progressLabel = `${weeklyProgress}/${weeklyTarget} this week`;
+    if (goal.params.frequency === 'daily') {
+      const isDoneToday = goal.history.some(h => h.date === getTodayDate());
+      progress = isDoneToday ? 100 : 0;
+      progressLabel = isDoneToday ? 'Completed Today' : 'Daily Goal';
+    } else {
+      const weeklyProgress = goal.params.weeklyProgress || 0;
+      const weeklyTarget = goal.params.weeklyTarget || 3;
+      progress = (weeklyProgress / weeklyTarget) * 100;
+      progressLabel = `${weeklyProgress}/${weeklyTarget} this week`;
+    }
 
     // If frequency has exercises with intensity, show that too
     if (goal.exercises.length > 0) {
@@ -102,13 +108,24 @@ export const GoalCard = ({ goal, index }: GoalCardProps) => {
             <Trophy className="w-4 h-4 text-rank-gold" />
             <span className="text-xs font-semibold text-rank-gold">GOAL ACHIEVED! +1000 XP</span>
           </div>
-          <Button
-            size="sm"
-            onClick={(e) => { e.stopPropagation(); handleMoveToHabits(); }}
-            className="h-7 text-xs bg-gradient-to-r from-rank-gold to-yellow-500 text-black font-semibold hover:opacity-90 transition-opacity"
-          >
-            Move to Habits <ArrowRight className="w-3 h-3 ml-1" />
-          </Button>
+          <div className="flex gap-2">
+            {!goal.rewardsClaimed && (
+              <Button
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); claimGoalRewards(goal.id); }}
+                className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white font-bold animate-pulse"
+              >
+                Claim 1000 XP
+              </Button>
+            )}
+            <Button
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); handleMoveToHabits(); }}
+              className="h-7 text-xs bg-gradient-to-r from-rank-gold to-yellow-500 text-black font-semibold hover:opacity-90 transition-opacity"
+            >
+              Move to Habits <ArrowRight className="w-3 h-3 ml-1" />
+            </Button>
+          </div>
         </div>
       )}
 
@@ -141,12 +158,39 @@ export const GoalCard = ({ goal, index }: GoalCardProps) => {
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
                 {typeLabels[goal.type]}
               </span>
-              {goal.consecutiveDays > 0 && (
+              {/* Show streak badge for ALL daily goals */}
+              {goal.params.frequency === 'daily' && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/10 text-orange-500 flex items-center gap-1">
                   <Flame className="w-3 h-3" />
-                  {goal.consecutiveDays} day streak
+                  {goal.consecutiveDays > 0 ? `${goal.consecutiveDays} day streak` : 'Start streak!'}
                 </span>
               )}
+              {/* For weekly goals, still show if they have a streak */}
+              {goal.params.frequency === 'weekly' && goal.consecutiveDays > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/10 text-orange-500 flex items-center gap-1">
+                  <Flame className="w-3 h-3" />
+                  {goal.consecutiveDays} week streak
+                </span>
+              )}
+
+              {/* Shame Badge Logic */}
+              {(() => {
+                if (!goal.streakBrokenDate) return null;
+                const today = new Date(getTodayDate());
+                const brokenDate = new Date(goal.streakBrokenDate);
+                // Calculate diff in days
+                const diffTime = Math.abs(today.getTime() - brokenDate.getTime());
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays <= 3) {
+                  return (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive flex items-center gap-1 font-bold animate-pulse">
+                      Streak Broken (Prev: {goal.previousStreak})
+                    </span>
+                  );
+                }
+                return null;
+              })()}
               {goal.exercises.length > 1 && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
                   {goal.exercises.length} tasks

@@ -57,7 +57,12 @@ export const LeagueBadge3D = ({ league }: LeagueBadge3DProps) => {
       0.1,
       1000
     );
-    camera.position.set(0, 0, 7);
+    const width = mountRef.current.clientWidth;
+    const baseSize = 170; // Original component size
+    const baseZ = 7; // Original camera distance
+    const dynamicZ = baseZ * (width / baseSize);
+
+    camera.position.set(0, 0, dynamicZ);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
@@ -767,7 +772,7 @@ export const LeagueBadge3D = ({ league }: LeagueBadge3DProps) => {
           const particles = new THREE.Points(particleGeo, particleMat);
           group.add(particles);
           group.userData.particles = particles;
-          group.scale.set(0.75, 0.75, 0.75);
+          group.scale.set(0.70, 0.70, 0.70);
           break;
         }
       }
