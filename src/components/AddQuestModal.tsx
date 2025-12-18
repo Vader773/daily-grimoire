@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, Zap, Timer } from 'lucide-react';
 import { Difficulty, useGameStore } from '@/stores/gameStore';
@@ -20,6 +20,12 @@ export const AddQuestModal = () => {
   const [timerEnabled, setTimerEnabled] = useState(false);
   const [timerMinutes, setTimerMinutes] = useState(30);
   const { addTask } = useGameStore();
+
+  useEffect(() => {
+    const handler = () => setIsOpen(true);
+    window.addEventListener('questline-open-add-quest', handler);
+    return () => window.removeEventListener('questline-open-add-quest', handler);
+  }, []);
 
   const showTimerOption = difficulty === 'hard' || difficulty === 'boss';
 
