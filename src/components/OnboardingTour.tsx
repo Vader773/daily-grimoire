@@ -7,14 +7,18 @@ import { cn } from '@/lib/utils';
 
 const STORAGE_KEY = 'questline-onboarding-v1';
 
-type Step = 0 | 1 | 2;
+type Step = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 export const OnboardingTour = () => {
   const tasks = useGameStore(s => s.tasks);
+  const goals = useGameStore(s => s.goals);
+  const habits = useGameStore(s => s.habits);
+  const vices = useGameStore(s => s.vices);
   const activeView = useGameStore(s => s.activeView);
   const setActiveView = useGameStore(s => s.setActiveView);
 
   const hasAnyTasks = useMemo(() => tasks.length > 0, [tasks.length]);
+  const hasCompletedAnyTask = useMemo(() => tasks.some(t => t.completed), [tasks]);
 
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>(0);
@@ -39,6 +43,14 @@ export const OnboardingTour = () => {
     setStep(2);
   }, [open, step, hasAnyTasks]);
 
+  // Auto-advance after first task is completed ("claim" the XP)
+  useEffect(() => {
+    if (!open) return;
+    if (step !== 2) return;
+    if (!hasCompletedAnyTask) return;
+    setStep(3);
+  }, [open, step, hasCompletedAnyTask]);
+
   const finish = () => {
     try {
       localStorage.setItem(STORAGE_KEY, '1');
@@ -48,7 +60,7 @@ export const OnboardingTour = () => {
     setOpen(false);
   };
 
-  const goNext = () => setStep(s => (s < 2 ? ((s + 1) as Step) : s));
+  const goNext = () => setStep(s => (s < 6 ? ((s + 1) as Step) : s));
   const goPrev = () => setStep(s => (s > 0 ? ((s - 1) as Step) : s));
 
   const openCreateTask = () => {
@@ -57,14 +69,35 @@ export const OnboardingTour = () => {
     setStep(1);
   };
 
-  const stepTitle = step === 0 ? 'Welcome, Agent.' : step === 1 ? 'Create your first quest' : 'Understand XP & Leagues';
+  const stepTitle =
+    step === 0
+      ? 'Welcome, Agent.'
+      : step === 1
+        ? 'Create your first quest'
+        : step === 2
+          ? 'Claim your first XP'
+          : step === 3
+            ? 'XP vs Leagues'
+            : step === 4
+              ? 'Goals = auto quests'
+              : step === 5
+                ? 'Habits (recurring quests)'
+                : 'Vices (anti-streaks)';
 
   const stepBody =
     step === 0
       ? 'Complete quests to earn XP, level up, and climb monthly leagues. Ready to initialize your first mission?'
       : step === 1
-        ? 'Tap the + button to create a quest. Once you create one, this tutorial will continue automatically.'
-        : 'Every completed quest gives XP. Your monthly XP determines your league (Bronze → Immortal). Tap your avatar ring to open Statistics and the League Hall.';
+        ? 'Tap the + button to create a quest. Once you create one, this tutorial continues automatically.'
+        : step === 2
+          ? 'Now complete any quest in your list to claim the XP reward. As soon as you finish one, we’ll continue automatically.'
+          : step === 3
+            ? 'Outer ring = Level XP (lifetime). Inner ring = League XP (monthly). Leagues reset monthly and determine your rank (Bronze → Immortal). Tap your avatar ring to open Statistics + the League Hall.'
+            : step === 4
+              ? `When you create a Goal, Questline auto-generates quests for it. Progress your goal by completing those goal-quests. (You currently have ${goals.length} goals.)`
+              : step === 5
+                ? `Finished goals can be promoted into Habits: recurring quests that repeat daily/weekly. Keep streaks alive. (You currently have ${habits.length} habits.)`
+                : `Vices work like anti-streaks. You check in clean/relapse daily, and Questline tracks your streak + history. (You currently have ${vices.length} vices.)`;
 
   return (
     <AnimatePresence>
@@ -121,7 +154,7 @@ export const OnboardingTour = () => {
 
                     {step === 0 && (
                       <Button onClick={openCreateTask}>
-                        Create Quest
+                        Begin
                         <ChevronRight className="w-4 h-4" />
                       </Button>
                     )}
@@ -134,6 +167,20 @@ export const OnboardingTour = () => {
                     )}
 
                     {step === 2 && (
+                      <Button onClick={goNext} disabled={!hasCompletedAnyTask}>
+                        Continue
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    )}
+
+                    {step >= 3 && step < 6 && (
+                      <Button onClick={goNext}>
+                        Next
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    )}
+
+                    {step === 6 && (
                       <Button onClick={finish} className="bg-success text-success-foreground hover:bg-success/90">
                         Finish
                       </Button>

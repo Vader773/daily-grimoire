@@ -126,8 +126,7 @@ export const LeaguesPage = ({ isOpen, onClose }: LeaguesPageProps) => {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-background z-50 overflow-auto"
-          style={{ willChange: 'scroll-position', WebkitOverflowScrolling: 'touch' as any }}
+          className="fixed inset-0 bg-background z-50 overflow-y-scroll overscroll-contain"
         >
           {/* Header */}
           <div className="sticky top-0 glass-strong border-b border-border/50 z-10">

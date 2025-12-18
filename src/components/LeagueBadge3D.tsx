@@ -135,10 +135,11 @@ export const LeagueBadge3D = ({ league }: LeagueBadge3DProps) => {
 
       // Scale factor based on league to ensure fit/visibility
       let scale = 1.0;
-      if (leagueIndex <= 1) scale = 1.25; // Bronze & Silver - Bigger
-      else if (leagueIndex === 8) scale = 0.55; // Legend - smaller to fit in veils
-      else if (leagueIndex === 9) scale = 0.52; // Immortal - smaller to fit flames
-      else if (leagueIndex >= 6) scale = 0.72; // Grandmaster+ - slightly smaller
+      if (leagueIndex <= 1) scale = 1.18; // Bronze & Silver - slightly bigger
+      else if (leagueIndex === 8) scale = 0.48; // Legend - smaller to fit in veils
+      else if (leagueIndex === 9) scale = 0.44; // Immortal - smaller to fit flames
+      else if (leagueIndex >= 7) scale = 0.62; // Champion+ - smaller
+      else if (leagueIndex >= 6) scale = 0.68; // Grandmaster+ - slightly smaller
 
       group.scale.set(scale, scale, scale);
 
