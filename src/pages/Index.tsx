@@ -12,6 +12,8 @@ import { HabitWizard } from '@/components/HabitWizard';
 import { ViceWizard } from '@/components/ViceWizard';
 import { ViewToggle } from '@/components/ViewToggle';
 import { XPFloater } from '@/components/XPFloater';
+import { OnboardingTour } from '@/components/OnboardingTour';
+import { playGameSfx, haptic } from '@/lib/juice';
 
 import { useGameStore } from '@/stores/gameStore';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -29,6 +31,18 @@ const Index = () => {
   }, [checkAndGenerateDailyTasks]);
 
   const handleTaskComplete = useCallback((xp: number, leveledUp: boolean) => {
+    // Game juice: SFX + haptics
+    if (leveledUp) {
+      playGameSfx('levelup');
+      haptic([20, 30, 20]);
+    } else if (xp >= 50) {
+      playGameSfx('big');
+      haptic(25);
+    } else {
+      playGameSfx('complete');
+      haptic(12);
+    }
+
     // Show XP floater
     setFloaterXP(xp);
     setShowXPFloater(true);
@@ -68,6 +82,7 @@ const Index = () => {
       />
 
       <Header />
+      <OnboardingTour />
 
       <main className="w-full max-w-screen-lg mx-auto px-4 pt-16 sm:pt-20">
         {/* Compact Hero Section - XP Ring with integrated League */}

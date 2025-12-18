@@ -1,6 +1,5 @@
-import { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Trophy, Crown, Sparkles, Lock, Check } from 'lucide-react';
+import { X, Trophy, Sparkles, Lock, Check } from 'lucide-react';
 import { useGameStore, League } from '@/stores/gameStore';
 import { LEAGUE_THRESHOLDS } from '@/config/leagues';
 import { LeagueBadge3D } from './LeagueBadge3D';
@@ -105,30 +104,10 @@ const isIOS = () => {
 };
 
 export const LeaguesPage = ({ isOpen, onClose }: LeaguesPageProps) => {
-  const stats = useGameStore(state => state.stats);
-  const getLeague = useGameStore(state => state.getLeague);
-  const debugLeagueOverride = useGameStore(state => state.debugLeagueOverride);
+  const currentLeague = useGameStore(state => state.getLeague());
+  const monthlyXP = useGameStore(state => state.getMonthlyXP());
   const useIOSFallback = isIOS();
 
-  // Calculate current league based on monthly XP - reactive to dailyXP changes
-  const monthlyXP = useMemo(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    let totalXP = 0;
-
-    stats.dailyXP.forEach(entry => {
-      const entryDate = new Date(entry.date);
-      if (entryDate.getFullYear() === year && entryDate.getMonth() === month) {
-        totalXP += entry.xp;
-      }
-    });
-
-    return totalXP;
-  }, [stats.dailyXP]);
-
-  // Use debugLeagueOverride if set, otherwise calculate from monthly XP
-  const currentLeague = debugLeagueOverride || getLeague();
   const currentLeagueIndex = LEAGUE_ORDER.indexOf(currentLeague);
 
   // Get next league info
@@ -148,7 +127,7 @@ export const LeaguesPage = ({ isOpen, onClose }: LeaguesPageProps) => {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 bg-background z-50 overflow-auto"
-          style={{ willChange: 'scroll-position' }}
+          style={{ willChange: 'scroll-position', WebkitOverflowScrolling: 'touch' as any }}
         >
           {/* Header */}
           <div className="sticky top-0 glass-strong border-b border-border/50 z-10">

@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronRight, Trophy, Crown } from 'lucide-react';
 import { useGameStore, League } from '@/stores/gameStore';
@@ -103,25 +102,9 @@ const isIOS = () => {
 };
 
 export const CurrentLeagueCard = ({ onClick }: CurrentLeagueCardProps) => {
-  const { stats, getLeague, debugLeagueOverride } = useGameStore();
-  
-  const monthlyXP = useMemo(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    let totalXP = 0;
+  const currentLeague = useGameStore(state => state.getLeague());
+  const monthlyXP = useGameStore(state => state.getMonthlyXP());
 
-    stats.dailyXP.forEach(entry => {
-      const entryDate = new Date(entry.date);
-      if (entryDate.getFullYear() === year && entryDate.getMonth() === month) {
-        totalXP += entry.xp;
-      }
-    });
-
-    return totalXP;
-  }, [stats.dailyXP]);
-
-  const currentLeague = debugLeagueOverride || getLeague();
   const currentLeagueIndex = LEAGUE_ORDER.indexOf(currentLeague);
   const nextLeague = currentLeagueIndex < LEAGUE_ORDER.length - 1 
     ? LEAGUE_ORDER[currentLeagueIndex + 1] 
