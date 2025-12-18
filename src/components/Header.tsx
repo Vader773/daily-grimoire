@@ -15,11 +15,13 @@ import {
 import { cn } from '@/lib/utils';
 import { FullScreenCalendar } from './FullScreenCalendar';
 import { FullScreenStats } from './FullScreenStats';
+import { LeaguesPage } from './LeaguesPage';
 
 export const Header = () => {
   const { stats, theme, toggleTheme, getLeague, getWeeklyAverageXP } = useGameStore();
   const [showCalendar, setShowCalendar] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showLeagueHall, setShowLeagueHall] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const hasStreak = stats.streak > 0;
   const league = getLeague();
@@ -46,6 +48,11 @@ export const Header = () => {
   const handleOpenStats = () => {
     setSheetOpen(false);
     setTimeout(() => setShowStats(true), 150);
+  };
+
+  const handleOpenLeagueHall = () => {
+    setShowStats(false);
+    setTimeout(() => setShowLeagueHall(true), 150);
   };
 
   return (
@@ -228,7 +235,11 @@ export const Header = () => {
           setShowStats(false);
           setTimeout(() => setShowCalendar(true), 150);
         }}
+        onOpenLeagueHall={handleOpenLeagueHall}
       />
+
+      {/* League Hall */}
+      <LeaguesPage isOpen={showLeagueHall} onClose={() => setShowLeagueHall(false)} />
     </>
   );
 };

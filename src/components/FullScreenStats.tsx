@@ -10,17 +10,19 @@ import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { StreakCelebration } from './StreakCelebration';
 import { StreakFlame } from './StreakFlame';
+import { CurrentLeagueCard } from './CurrentLeagueCard';
 
 import { LEAGUE_THRESHOLDS } from '@/config/leagues';
 
 interface FullScreenStatsProps {
   isOpen: boolean;
   onClose: () => void;
-  onNavigateToStreak?: () => void; // Added prompt for navigation
-  league?: any; // Accepting League type
+  onNavigateToStreak?: () => void;
+  league?: any;
+  onOpenLeagueHall?: () => void;
 }
 
-export const FullScreenStats = ({ isOpen, onClose, onNavigateToStreak, league: leagueProp }: FullScreenStatsProps) => {
+export const FullScreenStats = ({ isOpen, onClose, onNavigateToStreak, league: leagueProp, onOpenLeagueHall }: FullScreenStatsProps) => {
   const { stats, getLeague, getWeeklyAverageXP, getCurrentLevelProgress, tasks, goals, habits } = useGameStore();
   const [showHistory, setShowHistory] = useState(false);
 
@@ -323,7 +325,9 @@ export const FullScreenStats = ({ isOpen, onClose, onNavigateToStreak, league: l
                     </div>
 
                     {/* League Card - Clickable to open Leagues Page */}
-
+                    {onOpenLeagueHall && (
+                      <CurrentLeagueCard onClick={onOpenLeagueHall} />
+                    )}
 
                     {/* Level Progress */}
                     <div className="p-5 rounded-2xl bg-gradient-to-br from-primary/10 to-xp/10 border border-primary/20">
