@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useGameStore, League } from '@/stores/gameStore';
 import { LEAGUE_THRESHOLDS } from '@/config/leagues';
 import { motion } from 'framer-motion';
@@ -6,7 +6,15 @@ import { Sparkles } from 'lucide-react';
 import { FullScreenStats } from './FullScreenStats';
 import { FullScreenCalendar } from './FullScreenCalendar';
 import { LeagueBadge3D } from './LeagueBadge3D';
+import { LeagueBadge2D } from './LeagueBadge2D';
 import { cn } from '@/lib/utils';
+
+// Detect iOS for performance optimization
+const isIOS = () => {
+  if (typeof window === 'undefined') return false;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+};
 
 interface XPRingProps {
   isLevelingUp?: boolean;
@@ -60,6 +68,12 @@ const getXPForLevel = (level: number): number => {
 export const XPRing = ({ isLevelingUp = false }: XPRingProps) => {
   const [showStats, setShowStats] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [useSimpleBadge, setUseSimpleBadge] = useState(false);
+
+  // Detect iOS on mount for performance optimization
+  useEffect(() => {
+    setUseSimpleBadge(isIOS());
+  }, []);
 
   // CRITICAL: Subscribe directly to the data that changes
   const stats = useGameStore(state => state.stats);
@@ -274,7 +288,11 @@ export const XPRing = ({ isLevelingUp = false }: XPRingProps) => {
           {/* Badge Container - sized for centered badge, overflow allowed */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-auto overflow-visible">
             <div className="w-[300px] h-[300px] sm:w-[350px] sm:h-[350px] flex items-center justify-center overflow-visible">
-              <LeagueBadge3D league={league} level={level} />
+              {useSimpleBadge ? (
+                <LeagueBadge2D league={league} level={level} />
+              ) : (
+                <LeagueBadge3D league={league} level={level} />
+              )}
             </div>
           </div>
 
