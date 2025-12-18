@@ -324,10 +324,8 @@ export const FullScreenStats = ({ isOpen, onClose, onNavigateToStreak, league: l
                       </div>
                     </div>
 
-                    {/* League Card - Clickable to open Leagues Page */}
-                    {onOpenLeagueHall && (
-                      <CurrentLeagueCard onClick={onOpenLeagueHall} />
-                    )}
+                    {/* League Card - Always show, clickable to open Leagues Page */}
+                    <CurrentLeagueCard onClick={() => onOpenLeagueHall?.()} />
 
                     {/* Level Progress */}
                     <div className="p-5 rounded-2xl bg-gradient-to-br from-primary/10 to-xp/10 border border-primary/20">

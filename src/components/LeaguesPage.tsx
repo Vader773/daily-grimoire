@@ -105,10 +105,12 @@ const isIOS = () => {
 };
 
 export const LeaguesPage = ({ isOpen, onClose }: LeaguesPageProps) => {
-  const { stats, getLeague, debugLeagueOverride } = useGameStore();
+  const stats = useGameStore(state => state.stats);
+  const getLeague = useGameStore(state => state.getLeague);
+  const debugLeagueOverride = useGameStore(state => state.debugLeagueOverride);
   const useIOSFallback = isIOS();
 
-  // Calculate current league based on monthly XP
+  // Calculate current league based on monthly XP - reactive to dailyXP changes
   const monthlyXP = useMemo(() => {
     const now = new Date();
     const year = now.getFullYear();
@@ -125,6 +127,7 @@ export const LeaguesPage = ({ isOpen, onClose }: LeaguesPageProps) => {
     return totalXP;
   }, [stats.dailyXP]);
 
+  // Use debugLeagueOverride if set, otherwise calculate from monthly XP
   const currentLeague = debugLeagueOverride || getLeague();
   const currentLeagueIndex = LEAGUE_ORDER.indexOf(currentLeague);
 
@@ -145,6 +148,7 @@ export const LeaguesPage = ({ isOpen, onClose }: LeaguesPageProps) => {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 bg-background z-50 overflow-auto"
+          style={{ willChange: 'scroll-position' }}
         >
           {/* Header */}
           <div className="sticky top-0 glass-strong border-b border-border/50 z-10">

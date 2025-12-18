@@ -136,7 +136,9 @@ export const LeagueBadge3D = ({ league }: LeagueBadge3DProps) => {
       // Scale factor based on league to ensure fit/visibility
       let scale = 1.0;
       if (leagueIndex <= 1) scale = 1.25; // Bronze & Silver - Bigger
-      else if (leagueIndex >= 6) scale = 0.85; // Grandmaster+ - Smaller to fit
+      else if (leagueIndex === 8) scale = 0.65; // Legend - Much smaller
+      else if (leagueIndex === 9) scale = 0.60; // Immortal - Smallest to fit flames
+      else if (leagueIndex >= 6) scale = 0.75; // Grandmaster, Champion - Smaller
 
       group.scale.set(scale, scale, scale);
 
