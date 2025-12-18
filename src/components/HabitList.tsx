@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useGameStore, Habit } from '@/stores/gameStore';
+import { useGameStore, getTodayDate, Habit } from '@/stores/gameStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Repeat, Trash2, Flame, Trophy, Plus, X, Check, ChevronDown, BarChart3, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -19,9 +19,12 @@ const EmptyHabitState = () => (
         <Repeat className="w-10 h-10 text-purple-500/50" />
       </div>
       <div>
-        <h3 className="font-heading font-semibold text-lg text-muted-foreground">No Habits Yet</h3>
+        <h3 className="font-heading font-semibold text-lg text-muted-foreground">Habits Dashboard</h3>
         <p className="text-sm text-muted-foreground/70 mt-1 max-w-xs mx-auto">
-          Tap the <span className="text-purple-500 font-semibold">+</span> button below to create your first habit!
+          Use this section to track your <span className="text-purple-500 font-semibold">EXISTING real-life habits</span>.
+        </p>
+        <p className="text-xs text-muted-foreground/50 mt-3 max-w-xs mx-auto">
+          ⚠️ To create a <span className="text-success font-semibold">NEW habit from scratch</span>, go to <span className="text-success font-semibold">Goals</span> and use the Habit template.
         </p>
       </div>
     </motion.div>
@@ -111,6 +114,25 @@ const HabitCard = ({ habit, index, onComplete, onDelete }: {
                   {habit.streak} day streak
                 </span>
               )}
+
+              {/* Shame Badge Logic */}
+              {(() => {
+                if (!habit.streakBrokenDate) return null;
+                const today = new Date(getTodayDate());
+                const brokenDate = new Date(habit.streakBrokenDate);
+                // Calculate diff in days
+                const diffTime = Math.abs(today.getTime() - brokenDate.getTime());
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays <= 3) {
+                  return (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive flex items-center gap-1 font-bold animate-pulse">
+                      Streak Broken (Prev: {habit.previousStreak})
+                    </span>
+                  );
+                }
+                return null;
+              })()}
             </div>
           </div>
 
@@ -141,11 +163,19 @@ const HabitCard = ({ habit, index, onComplete, onDelete }: {
                 <div className="space-y-2">
                   <div className="text-xs font-medium text-muted-foreground">Daily Tasks:</div>
                   {habit.exercises.map((exercise) => (
-                    <div key={exercise.id} className="p-2 rounded-lg bg-muted/30 flex items-center justify-between text-xs">
-                      <span className="font-medium text-muted-foreground">{exercise.name}</span>
-                      <span className="font-mono text-purple-400">
-                        {exercise.currentAmount} {exercise.unit}
-                      </span>
+                    <div key={exercise.id} className="p-2 rounded-lg bg-muted/30 flex flex-col gap-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-muted-foreground">{exercise.name}</span>
+                        <span className="font-mono text-purple-400">
+                          {exercise.currentAmount}/{exercise.targetAmount} {exercise.unit}
+                        </span>
+                      </div>
+                      <div className="h-1 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-purple-500 rounded-full transition-all"
+                          style={{ width: `${Math.min(100, Math.max(0, (exercise.currentAmount / exercise.targetAmount) * 100))}%` }}
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -227,7 +257,6 @@ const CreateHabitModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () =>
       exercises: [],
       frequency,
       weeklyTarget: frequency === 'weekly' ? weeklyTarget : undefined,
-      history: [],
     });
 
     setTitle('');

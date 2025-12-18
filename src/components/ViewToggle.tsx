@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Swords, Target, Repeat } from 'lucide-react';
+import { Swords, Target, Repeat, Skull } from 'lucide-react';
 import { useGameStore } from '@/stores/gameStore';
 import { cn } from '@/lib/utils';
 
@@ -10,6 +10,7 @@ export const ViewToggle = () => {
     { key: 'tasks' as const, label: 'Tasks', icon: Swords, color: 'bg-primary', textColor: 'text-primary-foreground' },
     { key: 'goals' as const, label: 'Goals', icon: Target, color: 'bg-success', textColor: 'text-success-foreground' },
     { key: 'habits' as const, label: 'Habits', icon: Repeat, color: 'bg-purple-500', textColor: 'text-white' },
+    { key: 'vices' as const, label: 'Vices', icon: Skull, color: 'bg-red-500', textColor: 'text-white' },
   ];
 
   const activeIndex = views.findIndex(v => v.key === activeView);

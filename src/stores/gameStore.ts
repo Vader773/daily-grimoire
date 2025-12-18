@@ -88,11 +88,28 @@ export interface Habit {
   exercises: GoalExercise[];
   frequency: 'daily' | 'weekly';
   weeklyTarget?: number;
+  weeklyProgress?: number; // Track progress toward weekly target
+  lastWeekReset?: string; // ISO date when weekly counter was last reset
   streak: number;
   longestStreak: number;
   lastCompletedDate?: string;
   history: { date: string; value: number; exerciseId?: string }[];
   createdAt: number;
+  streakBrokenDate?: string;
+  previousStreak?: number;
+}
+
+export type ViceTemplate = 'dopamine' | 'vitality' | 'substance' | 'custom';
+
+export interface Vice {
+  id: string;
+  title: string;
+  template: ViceTemplate;
+  startDate: string; // ISO Date
+  currentStreak: number;
+  longestStreak: number;
+  history: Record<string, 'clean' | 'relapsed'>; // Date -> Status
+  lastCheckIn: string; // ISO Date
 }
 
 export interface UserStats {
@@ -103,15 +120,17 @@ export interface UserStats {
   longestStreak?: number; // Track all-time high
   lastActiveDate: string | null;
   dailyXP: { date: string; xp: number }[];
+  taskHistory: { date: string; count: number }[]; // Persist completion counts
 }
 
 interface GameState {
   tasks: Task[];
   goals: Goal[];
   habits: Habit[];
+  vices: Vice[];
   stats: UserStats;
   theme: 'dark' | 'light';
-  activeView: 'tasks' | 'goals' | 'habits';
+  activeView: 'tasks' | 'goals' | 'habits' | 'vices';
 
   // Actions
   addTask: (title: string, difficulty: Difficulty, timerMinutes?: number) => void;
@@ -120,7 +139,7 @@ interface GameState {
   startTimer: (id: string) => void;
   completeTimer: (id: string) => void;
   toggleTheme: () => void;
-  setActiveView: (view: 'tasks' | 'goals' | 'habits') => void;
+  setActiveView: (view: 'tasks' | 'goals' | 'habits' | 'vices') => void;
 
   // Goal actions
   addGoal: (goal: Omit<Goal, 'id' | 'createdAt' | 'completed' | 'consecutiveDays' | 'history' | 'streakBrokenDate' | 'previousStreak'>) => void;
@@ -133,10 +152,16 @@ interface GameState {
   claimGoalRewards: (goalId: string) => void;
 
   // Habit actions
-  addHabit: (habit: Omit<Habit, 'id' | 'createdAt' | 'streak' | 'longestStreak'>) => void;
+  addHabit: (habit: Omit<Habit, 'id' | 'createdAt' | 'streak' | 'longestStreak' | 'history'>) => void;
   deleteHabit: (id: string) => void;
   completeHabit: (id: string) => { xp: number; leveledUp: boolean; newLevel: number };
   completeHabitTask: (taskId: string) => { xp: number; leveledUp: boolean; newLevel: number };
+
+  // Vice actions
+  addVice: (vice: Omit<Vice, 'id' | 'startDate' | 'currentStreak' | 'longestStreak' | 'history' | 'lastCheckIn'>) => void;
+  deleteVice: (id: string) => void;
+  checkInVice: (id: string, status: 'clean' | 'relapsed') => { xp: number; leveledUp: boolean; newLevel: number };
+  checkMissedViceDays: () => void;
 
   // Getters
   getXPForNextLevel: () => number;
@@ -191,8 +216,25 @@ const getXPForLevel = (level: number): number => {
   return Math.pow((level - 1) / 0.1, 2);
 };
 
-// DEBUG: Offset for date simulation
-export let DEBUG_DATE_OFFSET = 0;
+// DEBUG: Offset for date simulation - persisted in localStorage
+const loadDebugDateOffset = (): number => {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const stored = localStorage.getItem('questlife-debug-date-offset');
+    return stored ? parseInt(stored, 10) : 0;
+  } catch {
+    return 0;
+  }
+};
+
+export let DEBUG_DATE_OFFSET = loadDebugDateOffset();
+
+export const setDebugDateOffset = (offset: number) => {
+  DEBUG_DATE_OFFSET = offset;
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('questlife-debug-date-offset', String(offset));
+  }
+};
 
 export const getTodayDate = (): string => {
   const now = new Date();
@@ -390,6 +432,7 @@ export const useGameStore = create<GameState>()(
       tasks: [],
       goals: [],
       habits: [],
+      vices: [],
       stats: {
         currentXP: 0,
         totalLifetimeXP: 0,
@@ -397,6 +440,7 @@ export const useGameStore = create<GameState>()(
         streak: 0,
         lastActiveDate: null,
         dailyXP: [],
+        taskHistory: [],
       },
       theme: 'dark',
       activeView: 'tasks',
@@ -467,7 +511,8 @@ export const useGameStore = create<GameState>()(
         const existingTodayEntry = updatedDailyXP.find(d => d.date === today);
 
         // If NO entry existed for today (or it was 0), this is the FIRST action of the day.
-        if (!existingTodayEntry) {
+        // REFINED LOGIC: Always rely on lastActiveDate to determine if streak should update.
+        if (state.stats.lastActiveDate !== today) {
           // This is the first significant action of the day
           // Check streak continuity
           const yesterday = new Date();
@@ -476,8 +521,8 @@ export const useGameStore = create<GameState>()(
 
           if (state.stats.lastActiveDate === yesterdayStr) {
             newStreak += 1;
-          } else if (state.stats.lastActiveDate !== today) {
-            // Break streak if not yesterday and not today
+          } else {
+            // Break streak if not yesterday (and not today, which we checked)
             newStreak = 1;
           }
         }
@@ -990,7 +1035,11 @@ export const useGameStore = create<GameState>()(
                 exercises: updatedExercises,
                 longestStreak: newLongestStreak,
                 lastCompletedDate: today,
-                history: [...(h.history || []), historyEntry]
+                history: [...(h.history || []), historyEntry],
+                // Increment weekly progress for weekly habits
+                weeklyProgress: h.frequency === 'weekly'
+                  ? (h.weeklyProgress || 0) + 1
+                  : h.weeklyProgress
               }
               : h
           )
@@ -1150,9 +1199,9 @@ export const useGameStore = create<GameState>()(
         const newLevel = calculateLevel(newTotalXP);
         const leveledUp = newLevel > oldLevel;
 
-        // Calculate streak
+        // Calculate habit streak
         const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
+        yesterday.setDate(yesterday.getDate() - 1 + DEBUG_DATE_OFFSET);
         const yesterdayStr = yesterday.toISOString().split('T')[0];
 
         let newStreak = habit.streak;
@@ -1163,6 +1212,18 @@ export const useGameStore = create<GameState>()(
         }
 
         const newLongestStreak = Math.max(habit.longestStreak, newStreak);
+
+        // --- GLOBAL STREAK LOGIC ---
+        let newGlobalStreak = state.stats.streak;
+        // Check if this is the first activity of the day
+        if (state.stats.lastActiveDate !== today) {
+          if (state.stats.lastActiveDate === yesterdayStr) {
+            newGlobalStreak += 1;
+          } else {
+            // Broken streak (if not today and not yesterday)
+            newGlobalStreak = 1;
+          }
+        }
 
         // Update daily XP tracking
         const updatedDailyXP = [...state.stats.dailyXP];
@@ -1184,6 +1245,8 @@ export const useGameStore = create<GameState>()(
             currentXP: state.stats.currentXP + xpGained,
             totalLifetimeXP: newTotalXP,
             level: newLevel,
+            streak: newGlobalStreak,
+            longestStreak: Math.max(state.stats.longestStreak || 0, newGlobalStreak),
             lastActiveDate: today,
             dailyXP: updatedDailyXP,
           },
@@ -1192,11 +1255,155 @@ export const useGameStore = create<GameState>()(
         return { xp: xpGained, leveledUp, newLevel };
       },
 
+      // --- VICE ACTIONS ---
+      addVice: (viceData) => {
+        const today = getTodayDate();
+        const newVice = {
+          ...viceData,
+          id: crypto.randomUUID(),
+          startDate: today,
+          currentStreak: 0,
+          longestStreak: 0,
+          history: {},
+          lastCheckIn: '', // No check-in yet
+        };
+
+        set((state) => ({
+          vices: [newVice, ...state.vices],
+        }));
+      },
+
+      deleteVice: (id) => {
+        set((state) => ({
+          vices: state.vices.filter((v) => v.id !== id),
+        }));
+      },
+
+      checkInVice: (id, status) => {
+        const state = get();
+        const vice = state.vices.find(v => v.id === id);
+        if (!vice) return { xp: 0, leveledUp: false, newLevel: state.stats.level };
+
+        const today = getTodayDate();
+
+        // Prevent double check-in
+        if (vice.lastCheckIn === today) {
+          return { xp: 0, leveledUp: false, newLevel: state.stats.level };
+        }
+
+        let newStreak = vice.currentStreak;
+        let xpGained = 0;
+
+        if (status === 'clean') {
+          newStreak = vice.currentStreak + 1;
+          xpGained = 50; // +50 XP for staying clean
+        } else {
+          newStreak = 0; // Relapse resets streak
+        }
+
+        const newLongestStreak = Math.max(vice.longestStreak, newStreak);
+        const newHistory = { ...vice.history, [today]: status };
+
+        // Update XP and levels
+        const newTotalXP = state.stats.totalLifetimeXP + xpGained;
+        const oldLevel = state.stats.level;
+        const newLevel = calculateLevel(newTotalXP);
+        const leveledUp = newLevel > oldLevel;
+
+        // Update daily XP
+        const updatedDailyXP = [...state.stats.dailyXP];
+        if (xpGained > 0) {
+          const todayEntry = updatedDailyXP.find(d => d.date === today);
+          if (todayEntry) {
+            todayEntry.xp += xpGained;
+          } else {
+            updatedDailyXP.push({ date: today, xp: xpGained });
+          }
+        }
+
+        // Global streak logic
+        let newGlobalStreak = state.stats.streak;
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1 + DEBUG_DATE_OFFSET);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+        if (state.stats.lastActiveDate !== today) {
+          if (state.stats.lastActiveDate === yesterdayStr) {
+            newGlobalStreak += 1;
+          } else {
+            newGlobalStreak = 1;
+          }
+        }
+
+        set({
+          vices: state.vices.map(v =>
+            v.id === id
+              ? {
+                ...v,
+                currentStreak: newStreak,
+                longestStreak: newLongestStreak,
+                history: newHistory,
+                lastCheckIn: today,
+              }
+              : v
+          ),
+          stats: {
+            ...state.stats,
+            totalLifetimeXP: newTotalXP,
+            level: newLevel,
+            streak: newGlobalStreak,
+            longestStreak: Math.max(state.stats.longestStreak || 0, newGlobalStreak),
+            lastActiveDate: today,
+            dailyXP: updatedDailyXP,
+          },
+        });
+
+        return { xp: xpGained, leveledUp, newLevel };
+      },
+
+      checkMissedViceDays: () => {
+        const state = get();
+        const today = getTodayDate();
+
+        const updatedVices = state.vices.map(vice => {
+          if (!vice.lastCheckIn) return vice; // Never checked in yet
+
+          // Calculate missed days between lastCheckIn and today
+          const lastDate = new Date(vice.lastCheckIn);
+          const todayDate = new Date(today);
+          const diffTime = todayDate.getTime() - lastDate.getTime();
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+          if (diffDays <= 1) return vice; // No missed days (yesterday or today)
+
+          // Mark all missed days as relapsed
+          const newHistory = { ...vice.history };
+          for (let i = 1; i < diffDays; i++) {
+            const missedDate = new Date(lastDate);
+            missedDate.setDate(lastDate.getDate() + i);
+            const missedDateStr = missedDate.toISOString().split('T')[0];
+            if (!newHistory[missedDateStr]) {
+              newHistory[missedDateStr] = 'relapsed';
+            }
+          }
+
+          // Streak is broken if any days were missed
+          return {
+            ...vice,
+            history: newHistory,
+            currentStreak: 0, // Reset streak due to missed days
+          };
+        });
+
+        set({ vices: updatedVices });
+      },
+
       debugResetAll: () => {
         set({
           tasks: [],
           goals: [],
           habits: [],
+          vices: [],
           stats: {
             currentXP: 0,
             totalLifetimeXP: 0,
@@ -1205,6 +1412,7 @@ export const useGameStore = create<GameState>()(
             longestStreak: 0,
             lastActiveDate: null, // Reset this so streak logic works like new
             dailyXP: [],
+            taskHistory: [],
           },
           debugLeagueOverride: undefined,
           theme: 'dark'
@@ -1221,7 +1429,6 @@ export const useGameStore = create<GameState>()(
         const startOfWeek = getStartOfWeek();
 
         // --- GLOBAL STREAK RESET CHECK ---
-        // Verify if global streak should be broken (missed yesterday)
         let newGlobalStreak = state.stats.streak;
         if (state.stats.streak > 0) {
           const yesterday = new Date();
@@ -1234,43 +1441,75 @@ export const useGameStore = create<GameState>()(
           }
         }
 
-        // --- CLEANUP LOGIC ---
-        // 1. Remove ALL completed tasks from previous days (keep today's completed)
-        // 2. Remove UNCOMPLETED GENERATED tasks from previous days (habits/daily goals)
-        // 3. Keep UNCOMPLETED MANUAL tasks forever until done
-
         // --- HABIT STREAK RESET CHECK ---
         let habitsUpdated = false;
         let updatedHabits = state.habits.map(habit => {
+          let needsUpdate = false;
+          let updatedHabit = { ...habit };
+
+          // Check for streak reset (missed a day)
           if (habit.streak > 0) {
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1 + DEBUG_DATE_OFFSET);
             const yesterdayStr = yesterday.toISOString().split('T')[0];
 
-            // Check if completed yesterday OR today
             if (habit.lastCompletedDate !== yesterdayStr && habit.lastCompletedDate !== today) {
-              habitsUpdated = true;
-              return { ...habit, streak: 0 };
+              needsUpdate = true;
+              updatedHabit.streak = 0;
+              updatedHabit.history = [...(updatedHabit.history || []), { date: yesterdayStr, value: 0 }];
             }
+          }
+
+          // Reset weekly progress at start of new week for weekly habits
+          if (habit.frequency === 'weekly' && habit.lastWeekReset !== startOfWeek) {
+            needsUpdate = true;
+            updatedHabit.weeklyProgress = 0;
+            updatedHabit.lastWeekReset = startOfWeek;
+          }
+
+          if (needsUpdate) {
+            habitsUpdated = true;
+            return updatedHabit;
           }
           return habit;
         });
 
+        // Archive completed tasks to history
+        const completedTasksToDelete = state.tasks.filter(task => {
+          if (task.completed) {
+            if (!task.completedAt) return false;
+            return new Date(task.completedAt).toISOString().split('T')[0] !== today;
+          }
+          return false;
+        });
+
+        const historyUpdates: Record<string, number> = {};
+        completedTasksToDelete.forEach(task => {
+          const date = new Date(task.completedAt!).toISOString().split('T')[0];
+          historyUpdates[date] = (historyUpdates[date] || 0) + 1;
+        });
+
+        let updatedTaskHistory = [...(state.stats.taskHistory || [])];
+        Object.entries(historyUpdates).forEach(([date, count]) => {
+          const existing = updatedTaskHistory.find(h => h.date === date);
+          if (existing) {
+            existing.count += count;
+          } else {
+            updatedTaskHistory.push({ date, count });
+          }
+        });
+
         const cleanedTasks = state.tasks.filter(task => {
-          // Keep manual tasks always (unless completed before today, user said clear completed tasks from yesterday)
           if (task.completed) {
             if (!task.completedAt) return false;
             return new Date(task.completedAt).toISOString().split('T')[0] === today;
           }
-
           if (task.isGoalTask || task.isHabitTask || task.dueDate === 'daily') {
             return task.createdAt >= todayStart;
           }
-
           return true;
         });
 
-        // Prepare new tasks list, starting with cleaned tasks
         let newTasks = [...cleanedTasks];
         let goalsUpdated = false;
         let updatedGoals = [...state.goals];
@@ -1281,6 +1520,8 @@ export const useGameStore = create<GameState>()(
             goalsUpdated = true;
             return {
               ...g,
+              completed: false,
+              rewardsClaimed: false,
               params: { ...g.params, weeklyProgress: 0, lastWeekReset: startOfWeek }
             };
           }
@@ -1288,13 +1529,8 @@ export const useGameStore = create<GameState>()(
         });
 
         // --- GENERATION LOGIC ---
-
         updatedGoals.forEach(goal => {
           if (goal.completed) return;
-
-          // -- GOAL STREAK CHECK --
-          // Check if we missed yesterday for daily goals, causing a streak break
-          // Only if we had a streak > 0
 
           let goalNeedsUpdate = false;
           let newStreak = goal.consecutiveDays;
@@ -1302,45 +1538,42 @@ export const useGameStore = create<GameState>()(
           let previousStreak = goal.previousStreak;
 
           if (goal.params.frequency === 'daily' && goal.consecutiveDays > 0) {
-            // Check if we did it yesterday
-            // We check history for an entry from yesterday OR today (if already done today)
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1 + DEBUG_DATE_OFFSET);
             const yesterdayStr = yesterday.toISOString().split('T')[0];
 
-            // Check history for yesterday
             const doneYesterday = goal.history.some(h => h.date === yesterdayStr);
-            const doneToday = goal.history.some(h => h.date === today); // If done today, streak is safe/incremented elsewhere
-
-            // If NOT done yesterday AND NOT done today (yet), it might be broken.
-            // Actually, if we are running this "at start of day" (generatetasks), "doneToday" is likely false.
-            // So if not done yesterday, streak IS broken (unless it's the very first day? no streak > 0 handles that).
-            // Wait, what if we just did it yesterday? doneYesterday would be true.
+            const doneToday = goal.history.some(h => h.date === today);
 
             if (!doneYesterday && !doneToday) {
-              // Streak BROKEN
               previousStreak = goal.consecutiveDays;
               newStreak = 0;
               streakBrokenDate = today;
               goalNeedsUpdate = true;
             }
+
+            if (!doneYesterday) {
+              const alreadyHasEntry = goal.history.some(h => h.date === yesterdayStr);
+              if (!alreadyHasEntry) {
+                goal.history.push({ date: yesterdayStr, value: 0 });
+              }
+            }
           }
 
-          // If the goal's streak was broken, update it in the store
-          if (goalNeedsUpdate) {
-            goalsUpdated = true; // Mark as updated for batch set
-            // Update the local goal object for subsequent logic in this loop
-            goal.consecutiveDays = newStreak;
-            goal.streakBrokenDate = streakBrokenDate;
-            goal.previousStreak = previousStreak;
-          }
+          // Update volatile fields in the local goal object reference (it's safe here as we map later if updated)
+          // Actually, we use 'updatedGoals' array which is a shallow copy. 
+          // If we mutate 'goal' here, it mutates the object inside the array.
+          // Since we are going to set proper state, direct mutation of the object in the COPY array is fine 
+          // as long as we use that copy.
+          goal.consecutiveDays = newStreak;
+          goal.streakBrokenDate = streakBrokenDate;
+          goal.previousStreak = previousStreak;
 
           if (goal.type === 'progressive') {
             goal.exercises.forEach(exercise => {
               const existingTask = newTasks.find(
                 t => t.goalId === goal.id &&
                   t.exerciseId === exercise.id &&
-                  !t.completed &&
                   t.createdAt >= todayStart
               );
 
@@ -1353,9 +1586,8 @@ export const useGameStore = create<GameState>()(
 
           if (goal.type === 'accumulator' && goal.params.frequency === 'daily') {
             const existingTask = newTasks.find(
-              t => t.goalId === goal.id && !t.completed && t.createdAt >= todayStart
+              t => t.goalId === goal.id && t.createdAt >= todayStart
             );
-
             if (!existingTask) {
               const newTask = generateGoalTask(goal);
               if (newTask) newTasks.push(newTask);
@@ -1367,18 +1599,21 @@ export const useGameStore = create<GameState>()(
             const weeklyTarget = goal.params.weeklyTarget || 3;
 
             if (weeklyProgress < weeklyTarget) {
-              // Check if task exists for today
-              const existingTask = newTasks.find(
-                t => t.goalId === goal.id && !t.completed && t.createdAt >= todayStart
-              );
-
-              if (!existingTask) {
-                if (goal.exercises.length > 0) {
-                  goal.exercises.forEach(exercise => {
+              if (goal.exercises.length > 0) {
+                goal.exercises.forEach(exercise => {
+                  const existingTask = newTasks.find(
+                    t => t.goalId === goal.id && t.exerciseId === exercise.id && t.createdAt >= todayStart
+                  );
+                  if (!existingTask) {
                     const newTask = generateGoalTask(goal, exercise);
                     if (newTask) newTasks.push(newTask);
-                  });
-                } else {
+                  }
+                });
+              } else {
+                const existingTask = newTasks.find(
+                  t => t.goalId === goal.id && t.createdAt >= todayStart
+                );
+                if (!existingTask) {
                   const newTask = generateGoalTask(goal);
                   if (newTask) newTasks.push(newTask);
                 }
@@ -1387,17 +1622,24 @@ export const useGameStore = create<GameState>()(
           }
         });
 
-        // Generate habit tasks
         updatedHabits.forEach(habit => {
-          // Check if habit was already completed today
           if (habit.lastCompletedDate === today) return;
+
+          // For weekly habits, check if weekly target is already met
+          if (habit.frequency === 'weekly') {
+            const weeklyProgress = habit.weeklyProgress || 0;
+            const weeklyTarget = habit.weeklyTarget || 3;
+            if (weeklyProgress >= weeklyTarget) {
+              // Weekly target met, don't generate new tasks this week
+              return;
+            }
+          }
 
           if (habit.exercises.length > 0) {
             habit.exercises.forEach(exercise => {
               const existingTask = newTasks.find(
-                t => t.habitId === habit.id && t.exerciseId === exercise.id && !t.completed && t.createdAt >= todayStart
+                t => t.habitId === habit.id && t.exerciseId === exercise.id && t.createdAt >= todayStart
               );
-
               if (!existingTask) {
                 const newTask = generateHabitTask(habit, exercise);
                 if (newTask) newTasks.push(newTask);
@@ -1405,9 +1647,8 @@ export const useGameStore = create<GameState>()(
             });
           } else {
             const existingTask = newTasks.find(
-              t => t.habitId === habit.id && !t.completed && t.createdAt >= todayStart
+              t => t.habitId === habit.id && t.createdAt >= todayStart
             );
-
             if (!existingTask) {
               const newTask = generateHabitTask(habit);
               if (newTask) newTasks.push(newTask);
@@ -1415,18 +1656,16 @@ export const useGameStore = create<GameState>()(
           }
         });
 
-        // Apply Status Updates
-        const finalStats = { ...state.stats };
+        const finalStats = { ...state.stats, taskHistory: updatedTaskHistory };
         if (newGlobalStreak !== state.stats.streak) {
           finalStats.streak = newGlobalStreak;
         }
 
-        // Batch update the store
         set((state) => ({
           tasks: newTasks,
           goals: goalsUpdated ? updatedGoals : state.goals,
           habits: habitsUpdated ? updatedHabits : state.habits,
-          stats: finalStats // Apply updated stats (including global streak reset)
+          stats: finalStats
         }));
       },
 
@@ -1611,12 +1850,10 @@ export const useGameStore = create<GameState>()(
       },
 
       debugAdvanceDay: () => {
-        DEBUG_DATE_OFFSET += 1; // Increment global offset
+        setDebugDateOffset(DEBUG_DATE_OFFSET + 1); // Increment and persist
         get().checkAndGenerateDailyTasks(); // Run daily logic for the "new" day
 
-        // Removed the forced lastActiveDate update to prevent false "Activity" flag that protects streaks improperly.
-        // The UI will update on next interaction or we can rely on React component re-renders if they read DEBUG_DATE_OFFSET directly?
-        // Actually, trigger a dummy update to force re-render without affecting logic state.
+        // Trigger a dummy update to force re-render
         set((state) => ({ theme: state.theme }));
       },
 

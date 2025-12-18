@@ -64,6 +64,7 @@ export const XPRing = ({ isLevelingUp = false }: XPRingProps) => {
   // CRITICAL: Subscribe directly to the data that changes
   const stats = useGameStore(state => state.stats);
   const debugLeagueOverride = useGameStore(state => state.debugLeagueOverride);
+  const activeView = useGameStore(state => state.activeView);
   const dailyXP = stats.dailyXP;
   const totalLifetimeXP = stats.totalLifetimeXP;
   const level = stats.level;
@@ -171,11 +172,18 @@ export const XPRing = ({ isLevelingUp = false }: XPRingProps) => {
           viewBox="0 0 300 300"
         >
           <defs>
-            {/* XP Gradient (outer ring) - GREEN for XP */}
-            <linearGradient id="xp-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#4ade80" /> {/* Green-400 */}
-              <stop offset="100%" stopColor="#16a34a" /> {/* Green-600 */}
-            </linearGradient>
+            {/* XP Gradient (outer ring) - GREEN for XP, RED for Vices */}
+            {activeView === 'vices' ? (
+              <linearGradient id="xp-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#ef4444" /> {/* Red-500 */}
+                <stop offset="100%" stopColor="#991b1b" /> {/* Red-800 */}
+              </linearGradient>
+            ) : (
+              <linearGradient id="xp-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#4ade80" /> {/* Green-400 */}
+                <stop offset="100%" stopColor="#16a34a" /> {/* Green-600 */}
+              </linearGradient>
+            )}
 
             {/* Metallic League Gradient (inner ring) */}
             <linearGradient id="league-gradient" x1="0%" y1="0%" x2="100%" y2="100%">

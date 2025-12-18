@@ -364,9 +364,21 @@ export const HabitWizard = () => {
                                                             <div>
                                                                 <label className="text-[10px] text-muted-foreground mb-1 block">Unit</label>
                                                                 <div className="flex flex-wrap gap-1">
-                                                                    <div className="px-2 py-1 rounded-full text-[10px] font-medium bg-purple-500 text-white">
-                                                                        Minutes
-                                                                    </div>
+                                                                    {unitPresets[template].map((preset) => (
+                                                                        <button
+                                                                            key={preset.value}
+                                                                            type="button"
+                                                                            onClick={() => updateExercise(index, { unit: preset.value })}
+                                                                            className={cn(
+                                                                                "px-2 py-1 rounded-full text-[10px] font-medium transition-all",
+                                                                                exercise.unit === preset.value
+                                                                                    ? "bg-purple-500 text-white"
+                                                                                    : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                                                                            )}
+                                                                        >
+                                                                            {preset.label}
+                                                                        </button>
+                                                                    ))}
                                                                 </div>
                                                             </div>
                                                         </div>

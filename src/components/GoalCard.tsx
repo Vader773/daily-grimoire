@@ -66,21 +66,33 @@ export const GoalCard = ({ goal, index }: GoalCardProps) => {
     progress = (total / target) * 100;
     progressLabel = `${total}/${target} ${goal.params.unit || 'items'}`;
   } else if (goal.type === 'frequency') {
-    if (goal.params.frequency === 'daily') {
-      const isDoneToday = goal.history.some(h => h.date === getTodayDate());
-      progress = isDoneToday ? 100 : 0;
-      progressLabel = isDoneToday ? 'Completed Today' : 'Daily Goal';
-    } else {
-      const weeklyProgress = goal.params.weeklyProgress || 0;
-      const weeklyTarget = goal.params.weeklyTarget || 3;
-      progress = (weeklyProgress / weeklyTarget) * 100;
-      progressLabel = `${weeklyProgress}/${weeklyTarget} this week`;
-    }
-
-    // If frequency has exercises with intensity, show that too
+    // Check if we have exercises (like Habit goals) -> Show progress towards absolute target
     if (goal.exercises.length > 0) {
       const exercise = goal.exercises[0];
-      progressLabel += ` • ${exercise.currentAmount} ${exercise.unit}`;
+      progress = (exercise.currentAmount / exercise.targetAmount) * 100;
+      progressLabel = `${exercise.currentAmount}/${exercise.targetAmount} ${exercise.unit}`;
+
+      // Append daily status if needed
+      if (goal.params.frequency === 'daily') {
+        const isDoneToday = goal.history.some(h => h.date === getTodayDate());
+        if (isDoneToday) progressLabel += ' (Done Today)';
+      } else {
+        const weeklyProgress = goal.params.weeklyProgress || 0;
+        const weeklyTarget = goal.params.weeklyTarget || 3;
+        progressLabel += ` • ${weeklyProgress}/${weeklyTarget} this week`;
+      }
+    } else {
+      // Fallback for simple frequency goals without exercises
+      if (goal.params.frequency === 'daily') {
+        const isDoneToday = goal.history.some(h => h.date === getTodayDate());
+        progress = isDoneToday ? 100 : 0;
+        progressLabel = isDoneToday ? 'Completed Today' : 'Daily Goal';
+      } else {
+        const weeklyProgress = goal.params.weeklyProgress || 0;
+        const weeklyTarget = goal.params.weeklyTarget || 3;
+        progress = (weeklyProgress / weeklyTarget) * 100;
+        progressLabel = `${weeklyProgress}/${weeklyTarget} this week`;
+      }
     }
   }
 

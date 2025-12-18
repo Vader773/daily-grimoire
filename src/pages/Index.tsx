@@ -5,9 +5,11 @@ import { XPRing } from '@/components/XPRing';
 import { QuestList } from '@/components/QuestList';
 import { GoalList } from '@/components/GoalList';
 import { HabitList } from '@/components/HabitList';
+import { ViceList } from '@/components/ViceList';
 import { AddQuestModal } from '@/components/AddQuestModal';
 import { GoalWizard } from '@/components/GoalWizard';
 import { HabitWizard } from '@/components/HabitWizard';
+import { ViceWizard } from '@/components/ViceWizard';
 import { ViewToggle } from '@/components/ViewToggle';
 import { XPFloater } from '@/components/XPFloater';
 
@@ -116,6 +118,17 @@ const Index = () => {
                 <HabitList />
               </motion.div>
             )}
+            {activeView === 'vices' && (
+              <motion.div
+                key="vices"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ViceList />
+              </motion.div>
+            )}
           </AnimatePresence>
         </section>
       </main>
@@ -128,6 +141,9 @@ const Index = () => {
 
       {/* Habit Wizard FAB (shows in habits view) */}
       <HabitWizard />
+
+      {/* Vice Wizard FAB (shows in vices view) */}
+      <ViceWizard />
     </div>
   );
 };

@@ -165,27 +165,48 @@ export const Header = () => {
             Quest<span className="text-primary">Line</span>
           </h1>
 
-          {/* Streak - Right (now clickable to open calendar) */}
-          <motion.button
-            className="relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10"
-            onClick={() => setShowCalendar(true)}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            {/* Animated flame for active streak */}
-            <div className="flex items-center justify-center">
-              <StreakFlame streak={stats.streak} size="sm" animated={hasStreak} />
-            </div>
-            {hasStreak && (
-              <motion.span
-                className="absolute -bottom-0.5 -right-0.5 text-[9px] sm:text-[10px] font-mono font-bold text-rank-bronze bg-background/80 rounded-full px-1"
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-              >
-                {stats.streak}
-              </motion.span>
-            )}
-          </motion.button>
+          {/* Feedback Button & Streak - Right */}
+          <div className="flex items-center gap-1">
+            {/* Feedback Button */}
+            <a
+              href="https://forms.gle/pnGsGjrtvE5YCRnX6"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                "flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] sm:text-xs font-medium transition-colors",
+                theme === 'dark'
+                  ? "bg-white text-black hover:bg-gray-200"
+                  : "bg-black text-white hover:bg-gray-800"
+              )}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              <span className="hidden sm:inline">Feedback</span>
+            </a>
+
+            {/* Streak Button */}
+            <motion.button
+              className="relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10"
+              onClick={() => setShowCalendar(true)}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              {/* Animated flame for active streak */}
+              <div className="flex items-center justify-center">
+                <StreakFlame streak={stats.streak} size="sm" animated={hasStreak} />
+              </div>
+              {hasStreak && (
+                <motion.span
+                  className="absolute -bottom-0.5 -right-0.5 text-[9px] sm:text-[10px] font-mono font-bold text-rank-bronze bg-background/80 rounded-full px-1"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                >
+                  {stats.streak}
+                </motion.span>
+              )}
+            </motion.button>
+          </div>
         </div>
       </header>
 
