@@ -25,10 +25,17 @@ export const Header = () => {
   const league = getLeague();
   const weeklyAvg = getWeeklyAverageXP();
 
-  const leagueColors = {
+  const leagueColors: Record<string, string> = {
     bronze: 'text-rank-bronze',
     silver: 'text-rank-silver',
     gold: 'text-rank-gold',
+    platinum: 'text-slate-300',
+    diamond: 'text-cyan-400',
+    master: 'text-purple-600',
+    grandmaster: 'text-red-500',
+    champion: 'text-emerald-500',
+    legend: 'text-indigo-500',
+    immortal: 'text-amber-500',
   };
 
   const handleOpenCalendar = () => {
