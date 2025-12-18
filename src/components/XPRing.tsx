@@ -77,20 +77,59 @@ export const XPRing = ({ isLevelingUp = false }: XPRingProps) => {
     setUseSimpleBadge(isIOS());
   }, []);
 
-  // CRITICAL: Subscribe directly to the data that changes
+  // Subscribe to raw data only - compute derived values locally to avoid infinite loops
   const stats = useGameStore(state => state.stats);
+  const debugLeagueOverride = useGameStore(state => state.debugLeagueOverride);
   const activeView = useGameStore(state => state.activeView);
   const dailyXP = stats.dailyXP;
   const totalLifetimeXP = stats.totalLifetimeXP;
   const level = stats.level;
 
-  // Use store getters to keep League Hall + hero ring perfectly in sync
-  const monthlyXP = useGameStore(state => state.getMonthlyXP());
-  const league = useGameStore(state => state.getLeague());
-  const leagueProgress = useGameStore(state => state.getLeagueProgress());
+  // Compute monthlyXP locally from dailyXP
+  const monthlyXP = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    let total = 0;
+    dailyXP.forEach(entry => {
+      const d = new Date(entry.date);
+      if (d.getFullYear() === year && d.getMonth() === month) total += entry.xp;
+    });
+    return total;
+  }, [dailyXP]);
 
+  // Compute league locally
+  const league = useMemo((): League => {
+    if (debugLeagueOverride) return debugLeagueOverride;
+    if (monthlyXP >= LEAGUE_THRESHOLDS.immortal) return 'immortal';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.legend) return 'legend';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.champion) return 'champion';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.grandmaster) return 'grandmaster';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.master) return 'master';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.diamond) return 'diamond';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.platinum) return 'platinum';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.gold) return 'gold';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.silver) return 'silver';
+    return 'bronze';
+  }, [monthlyXP, debugLeagueOverride]);
+
+  // Compute league progress locally
+  const leagueProgress = useMemo(() => {
+    const tiers: League[] = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'master', 'grandmaster', 'champion', 'legend', 'immortal'];
+    const currentIndex = tiers.indexOf(league);
+    const nextLeague = currentIndex < tiers.length - 1 ? tiers[currentIndex + 1] : null;
+    const currentThreshold = LEAGUE_THRESHOLDS[league];
+    const nextThreshold = nextLeague ? LEAGUE_THRESHOLDS[nextLeague] : 35000;
+    if (!nextLeague) return { current: monthlyXP, needed: 35000, nextLeague: null, percent: 100 };
+    const needed = nextThreshold - currentThreshold;
+    const currentInTier = Math.max(0, monthlyXP - currentThreshold);
+    const percent = Math.min(100, Math.max(0, (currentInTier / needed) * 100));
+    return { current: currentInTier, needed: nextThreshold, nextLeague, percent };
+  }, [monthlyXP, league]);
+
+  // Get level progress - subscribe to the function, then call it outside selector
   const getCurrentLevelProgress = useGameStore(state => state.getCurrentLevelProgress);
-  const xpProgress = getCurrentLevelProgress();
+  const xpProgress = useMemo(() => getCurrentLevelProgress(), [getCurrentLevelProgress, totalLifetimeXP, level]);
 
   // Calculate XP display values
   const currentLevelXP = getXPForLevel(level);
