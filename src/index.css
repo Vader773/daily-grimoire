@@ -211,3 +211,14 @@
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-muted-foreground/30;
 }
+
+/* Ensure animations continue during scroll */
+.animate-on-scroll {
+  will-change: transform;
+  animation-play-state: running !important;
+}
+
+/* Keep 3D canvas animations running during scroll */
+canvas {
+  will-change: transform;
+}

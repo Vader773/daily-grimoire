@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import { FullScreenStats } from './FullScreenStats';
 import { FullScreenCalendar } from './FullScreenCalendar';
+import { LeaguesPage } from './LeaguesPage';
 import { LeagueBadge3D } from './LeagueBadge3D';
 import { LeagueBadge2D } from './LeagueBadge2D';
 import { cn } from '@/lib/utils';
@@ -68,6 +69,7 @@ const getXPForLevel = (level: number): number => {
 export const XPRing = ({ isLevelingUp = false }: XPRingProps) => {
   const [showStats, setShowStats] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showLeagueHall, setShowLeagueHall] = useState(false);
   const [useSimpleBadge, setUseSimpleBadge] = useState(false);
 
   // Detect iOS on mount for performance optimization
@@ -357,10 +359,18 @@ export const XPRing = ({ isLevelingUp = false }: XPRingProps) => {
           setShowStats(false);
           setShowCalendar(true);
         }}
+        onOpenLeagueHall={() => {
+          setShowStats(false);
+          setTimeout(() => setShowLeagueHall(true), 150);
+        }}
       />
       <FullScreenCalendar
         isOpen={showCalendar}
         onClose={() => setShowCalendar(false)}
+      />
+      <LeaguesPage
+        isOpen={showLeagueHall}
+        onClose={() => setShowLeagueHall(false)}
       />
     </>
   );

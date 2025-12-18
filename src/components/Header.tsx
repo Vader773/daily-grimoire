@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
-import { Menu, Flame, Sun, Moon, Trophy, Zap, Target, TrendingUp, Calendar, BarChart3 } from 'lucide-react';
+import { Menu, Flame, Sun, Moon, Trophy, Zap, Target, TrendingUp, Calendar, BarChart3, MessageSquare } from 'lucide-react';
 import { StreakFlame } from '@/components/StreakFlame';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
@@ -16,12 +16,14 @@ import { cn } from '@/lib/utils';
 import { FullScreenCalendar } from './FullScreenCalendar';
 import { FullScreenStats } from './FullScreenStats';
 import { LeaguesPage } from './LeaguesPage';
+import { FeedbackModal } from './FeedbackModal';
 
 export const Header = () => {
   const { stats, theme, toggleTheme, getLeague, getWeeklyAverageXP } = useGameStore();
   const [showCalendar, setShowCalendar] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showLeagueHall, setShowLeagueHall] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const hasStreak = stats.streak > 0;
   const league = getLeague();
@@ -182,10 +184,8 @@ export const Header = () => {
           {/* Feedback Button & Streak - Right */}
           <div className="flex items-center gap-1">
             {/* Feedback Button */}
-            <a
-              href="https://forms.gle/pnGsGjrtvE5YCRnX6"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => setShowFeedback(true)}
               className={cn(
                 "flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] sm:text-xs font-medium transition-colors",
                 theme === 'dark'
@@ -193,11 +193,9 @@ export const Header = () => {
                   : "bg-black text-white hover:bg-gray-800"
               )}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
+              <MessageSquare className="w-3 h-3 sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">Feedback</span>
-            </a>
+            </button>
 
             {/* Streak Button */}
             <motion.button
@@ -240,6 +238,9 @@ export const Header = () => {
 
       {/* League Hall */}
       <LeaguesPage isOpen={showLeagueHall} onClose={() => setShowLeagueHall(false)} />
+
+      {/* Feedback Modal */}
+      <FeedbackModal isOpen={showFeedback} onClose={() => setShowFeedback(false)} />
     </>
   );
 };
