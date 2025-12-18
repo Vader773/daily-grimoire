@@ -59,11 +59,13 @@ export const AddQuestModal = () => {
   return (
     <>
       {/* FAB Button - Centered using flexbox */}
-      <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 flex justify-center z-40 pointer-events-none">
+      <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 flex justify-center items-center z-40 pointer-events-none">
+        {/* Backdrop Glow */}
+        <div className="absolute w-20 h-20 bg-black/40 blur-xl rounded-full" />
         <motion.button
           id="add-task-btn"
           onClick={() => setIsOpen(true)}
-          className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center glow-primary shadow-lg pointer-events-auto"
+          className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center glow-primary shadow-lg pointer-events-auto relative"
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.95 }}
         >
@@ -176,10 +178,13 @@ export const AddQuestModal = () => {
                               <div className="flex items-center gap-2">
                                 <Input
                                   type="number"
-                                  min="1"
+                                  min="0"
                                   max="480"
                                   value={timerMinutes}
-                                  onChange={(e) => setTimerMinutes(Math.max(1, Math.min(480, parseInt(e.target.value) || 1)))}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    setTimerMinutes(isNaN(val) ? 0 : val);
+                                  }}
                                   className="w-20 sm:w-24 h-9 sm:h-10 font-mono text-center"
                                 />
                                 <span className="text-xs sm:text-sm text-muted-foreground">minutes</span>

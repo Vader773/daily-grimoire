@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import { Plus, X, Target, Dumbbell, Brain, BookOpen, ChevronRight, ChevronLeft, Trash2 } from 'lucide-react';
 import { GoalType, GoalTemplate, GoalExercise, useGameStore } from '@/stores/gameStore';
 import { Button } from '@/components/ui/button';
@@ -57,14 +58,22 @@ export const GoalWizard = () => {
   const [goalType, setGoalType] = useState<GoalType>('progressive');
   const [frequency, setFrequency] = useState<'daily' | 'weekly'>('daily');
 
+  // Form Exercises allow string inputs for flexibility
+  type FormExercise = {
+    name: string;
+    startAmount: string;
+    targetAmount: string;
+    unit: GoalExercise['unit'];
+  };
+
   // Exercises/Tasks for the goal
-  const [exercises, setExercises] = useState<Partial<GoalExercise>[]>([]);
+  const [exercises, setExercises] = useState<FormExercise[]>([]);
 
   // Frequency fields
   const [weeklyTarget, setWeeklyTarget] = useState(3);
 
-  // Accumulator fields
-  const [accumulatorTarget, setAccumulatorTarget] = useState(12);
+  // Accumulator fields - use string for input flexibility
+  const [accumulatorTarget, setAccumulatorTarget] = useState('12');
   const [accumulatorUnit, setAccumulatorUnit] = useState<GoalExercise['unit']>('books');
 
   const { addGoal, activeView } = useGameStore();
@@ -77,7 +86,9 @@ export const GoalWizard = () => {
     setFrequency('daily');
     setExercises([]);
     setWeeklyTarget(3);
-    setAccumulatorTarget(12);
+    setExercises([]);
+    setWeeklyTarget(3);
+    setAccumulatorTarget('12');
     setAccumulatorUnit('books');
   };
 
@@ -88,7 +99,7 @@ export const GoalWizard = () => {
     // Pre-fill based on template
     if (t.value === 'fitness') {
       setFrequency('daily');
-      setExercises([{ name: '', startAmount: 10, targetAmount: 50, unit: 'reps' }]);
+      setExercises([{ name: '', startAmount: '10', targetAmount: '50', unit: 'reps' }]);
     } else if (t.value === 'reading') {
       setFrequency('weekly');
       setAccumulatorUnit('books');
@@ -97,7 +108,7 @@ export const GoalWizard = () => {
       setFrequency('daily');
       setWeeklyTarget(7);
       // Start at 2 minutes (Two-Minute Rule), target set by user (default 30 mins)
-      setExercises([{ name: '', startAmount: 2, targetAmount: 30, unit: 'minutes' }]);
+      setExercises([{ name: '', startAmount: '2', targetAmount: '30', unit: 'minutes' }]);
     } else {
       setExercises([]);
     }
@@ -107,10 +118,10 @@ export const GoalWizard = () => {
 
   const addExercise = () => {
     const defaultUnit = template === 'fitness' ? 'reps' : template === 'meditation' ? 'minutes' : 'reps';
-    setExercises([...exercises, { name: '', startAmount: 10, targetAmount: 50, unit: defaultUnit }]);
+    setExercises([...exercises, { name: '', startAmount: '10', targetAmount: '50', unit: defaultUnit }]);
   };
 
-  const updateExercise = (index: number, updates: Partial<GoalExercise>) => {
+  const updateExercise = (index: number, updates: Partial<FormExercise>) => {
     setExercises(exercises.map((e, i) => i === index ? { ...e, ...updates } : e));
   };
 
@@ -123,24 +134,49 @@ export const GoalWizard = () => {
     if (!title.trim()) return;
 
     // Build exercises array with proper IDs
-    const builtExercises: GoalExercise[] = exercises
-      .filter(e => e.name?.trim())
-      .map(e => {
-        // Atomic Habits (Two-Minute Rule): For habits with minutes, always start at 2 mins
-        const isAtomicHabit = template === 'meditation' && e.unit === 'minutes';
-        const startingAmount = isAtomicHabit ? 2 : (e.startAmount || 10);
+    let builtExercises: GoalExercise[];
 
-        return {
-          id: crypto.randomUUID(),
-          name: e.name!.trim(),
-          targetAmount: e.targetAmount || 50,
-          startAmount: e.startAmount || 10, // Keep original for reference
-          // Atomic Habits: Start at 2 mins regardless of input
-          currentAmount: startingAmount,
-          unit: e.unit || 'reps',
-          daysAtCurrentTarget: 0,
-        };
-      });
+    try {
+      builtExercises = exercises
+        .filter(e => e.name?.trim())
+        .map(e => {
+          // Atomic Habits (Two-Minute Rule): For habits with minutes, always start at 2 mins
+          const isAtomicHabit = template === 'meditation' && e.unit === 'minutes';
+
+          // Parse amounts with fallback to 1 as requested if empty/0
+          const parsedStart = parseInt(e.startAmount) || 1;
+          const parsedTarget = parseInt(e.targetAmount) || 1;
+
+          const startingAmount = isAtomicHabit ? 2 : parsedStart;
+
+          // Validation: Target must be > Start (unless Atomic Habit which handles itself)
+          if (!isAtomicHabit && parsedTarget <= startingAmount) {
+            throw new Error(`Target for "${e.name}" must be higher than Start amount (${startingAmount})`);
+          }
+
+          // Validation: Target is required
+          if (!parsedTarget || parsedTarget <= 0) {
+            throw new Error(`Target Goal for "${e.name}" is required`);
+          }
+
+          return {
+            id: crypto.randomUUID(),
+            name: e.name.trim(),
+            targetAmount: parsedTarget,
+            startAmount: parsedStart, // Keep original for reference
+            // Atomic Habits: Start at 2 mins regardless of input
+            currentAmount: startingAmount,
+            unit: e.unit || 'reps',
+            daysAtCurrentTarget: 0,
+          };
+        });
+
+    } catch (err) {
+      if (err instanceof Error) {
+        toast.error(err.message);
+      }
+      return;
+    }
 
     addGoal({
       title: title.trim(),
@@ -151,7 +187,7 @@ export const GoalWizard = () => {
         frequency,
         weeklyTarget: (goalType === 'frequency' || frequency === 'weekly') ? weeklyTarget : undefined,
         weeklyProgress: 0,
-        targetValue: goalType === 'accumulator' ? accumulatorTarget : undefined,
+        targetValue: goalType === 'accumulator' ? (parseInt(accumulatorTarget) || 1) : undefined,
         totalCompleted: 0,
         unit: goalType === 'accumulator' ? accumulatorUnit : undefined,
       },
@@ -167,10 +203,12 @@ export const GoalWizard = () => {
   return (
     <>
       {/* FAB Button - Green for goals */}
-      <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 flex justify-center z-40 pointer-events-none">
+      <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 flex justify-center items-center z-40 pointer-events-none">
+        {/* Backdrop Glow */}
+        <div className="absolute w-20 h-20 bg-black/40 blur-xl rounded-full" />
         <motion.button
           onClick={() => setIsOpen(true)}
-          className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-success text-success-foreground flex items-center justify-center glow-success shadow-lg pointer-events-auto"
+          className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-success text-success-foreground flex items-center justify-center glow-success shadow-lg pointer-events-auto relative"
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.95 }}
         >
@@ -297,7 +335,7 @@ export const GoalWizard = () => {
                                   setGoalType(type.value);
                                   if (type.value === 'progressive' || type.value === 'frequency') {
                                     if (exercises.length === 0) {
-                                      setExercises([{ name: '', startAmount: 10, targetAmount: 50, unit: 'reps' }]);
+                                      setExercises([{ name: '', startAmount: '10', targetAmount: '50', unit: 'reps' }]);
                                     }
                                   } else {
                                     setExercises([]);
@@ -426,9 +464,9 @@ export const GoalWizard = () => {
                                   <label className="text-[10px] text-muted-foreground mb-1 block">Start At</label>
                                   <Input
                                     type="number"
-                                    min="1"
-                                    value={exercise.startAmount || 10}
-                                    onChange={(e) => updateExercise(index, { startAmount: parseInt(e.target.value) || 10 })}
+                                    min="0"
+                                    value={exercise.startAmount}
+                                    onChange={(e) => updateExercise(index, { startAmount: e.target.value })}
                                     className="h-8 text-sm font-mono"
                                   />
                                 </div>
@@ -436,9 +474,9 @@ export const GoalWizard = () => {
                                   <label className="text-[10px] text-muted-foreground mb-1 block">Target Goal</label>
                                   <Input
                                     type="number"
-                                    min="1"
-                                    value={exercise.targetAmount || 50}
-                                    onChange={(e) => updateExercise(index, { targetAmount: parseInt(e.target.value) || 50 })}
+                                    min="0"
+                                    value={exercise.targetAmount}
+                                    onChange={(e) => updateExercise(index, { targetAmount: e.target.value })}
                                     className="h-8 text-sm font-mono"
                                   />
                                 </div>
@@ -486,9 +524,9 @@ export const GoalWizard = () => {
                             <label className="text-xs font-medium text-muted-foreground mb-2 block">Target Total</label>
                             <Input
                               type="number"
-                              min="1"
+                              min="0"
                               value={accumulatorTarget}
-                              onChange={(e) => setAccumulatorTarget(parseInt(e.target.value) || 1)}
+                              onChange={(e) => setAccumulatorTarget(e.target.value)}
                               className="h-10 font-mono"
                             />
                           </div>
@@ -579,12 +617,19 @@ export const GoalWizard = () => {
                       {title && exercises.length > 0 && exercises[0].name && (goalType === 'progressive' || goalType === 'frequency') && (
                         <div className="p-3 rounded-xl bg-success/10 border border-success/20">
                           <p className="text-xs text-success font-medium mb-1">First Tasks:</p>
-                          {exercises.filter(e => e.name).map((ex, i) => (
-                            <p key={i} className="text-xs text-muted-foreground">
-                              • {ex.name}: <span className="font-mono font-bold text-foreground">{ex.startAmount || 10}/{ex.targetAmount || 50} {ex.unit}</span>
-                              <span className="text-muted-foreground/70 ml-1">({frequency === 'daily' ? 'Daily' : 'Weekly'})</span>
-                            </p>
-                          ))}
+                          {exercises.filter(e => e.name).map((ex, i) => {
+                            // Atomic Habits logic for preview
+                            const isAtomic = template === 'meditation' && ex.unit === 'minutes';
+                            const displayStart = isAtomic ? '2' : (ex.startAmount || '1');
+                            const displayTarget = ex.targetAmount || '50';
+
+                            return (
+                              <p key={i} className="text-xs text-muted-foreground">
+                                • {ex.name}: <span className="font-mono font-bold text-foreground">{displayStart}/{displayTarget} {ex.unit}</span>
+                                <span className="text-muted-foreground/70 ml-1">({frequency === 'daily' ? 'Daily' : 'Weekly'})</span>
+                              </p>
+                            );
+                          })}
                           <p className="text-[10px] text-muted-foreground mt-2">
                             Increases by 5% every 3 successful completions
                           </p>

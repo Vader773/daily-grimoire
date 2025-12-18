@@ -130,7 +130,10 @@ export const EditTaskModal = ({ isOpen, onClose, task }: EditTaskModalProps) => 
                                                             <Input
                                                                 type="number"
                                                                 value={timerMinutes}
-                                                                onChange={e => setTimerMinutes(Number(e.target.value))}
+                                                                onChange={e => {
+                                                                    const val = parseInt(e.target.value);
+                                                                    setTimerMinutes(isNaN(val) ? 0 : val);
+                                                                }}
                                                                 className="w-20"
                                                             />
                                                             <span className="text-xs text-muted-foreground">minutes</span>

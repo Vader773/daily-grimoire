@@ -99,11 +99,13 @@ export const ViceWizard = () => {
     return (
         <>
             {/* FAB Button - Centered like other wizards, Red for vices */}
-            <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 flex justify-center z-40 pointer-events-none">
+            <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 flex justify-center items-center z-40 pointer-events-none">
+                {/* Backdrop Glow */}
+                <div className="absolute w-20 h-20 bg-black/40 blur-xl rounded-full" />
                 <motion.button
                     onClick={handleFABClick}
                     className={cn(
-                        "w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center shadow-lg pointer-events-auto transition-all duration-300",
+                        "w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center shadow-lg pointer-events-auto transition-all duration-300 relative",
                         "bg-red-500 text-white glow-success shadow-red-500/30 hover:bg-red-400"
                     )}
                     whileHover={{ scale: 1.1 }}

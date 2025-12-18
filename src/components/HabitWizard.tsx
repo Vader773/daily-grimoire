@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import { Plus, X, Repeat, Dumbbell, Brain, BookOpen, ChevronRight, ChevronLeft, Trash2, Heart } from 'lucide-react';
 import { GoalExercise, useGameStore } from '@/stores/gameStore';
 import { Button } from '@/components/ui/button';
@@ -53,7 +54,14 @@ export const HabitWizard = () => {
     const [weeklyTarget, setWeeklyTarget] = useState(3);
 
     // Exercises for the habit
-    const [exercises, setExercises] = useState<Partial<GoalExercise>[]>([]);
+    // Use strings for inputs to allow flexible typing (empty, 0, etc.)
+    type FormExercise = {
+        name: string;
+        currentAmount: string;
+        unit: GoalExercise['unit'];
+    };
+
+    const [exercises, setExercises] = useState<FormExercise[]>([]);
 
     const { addHabit, activeView } = useGameStore();
 
@@ -72,13 +80,13 @@ export const HabitWizard = () => {
         // Pre-fill based on template
         if (t.value === 'fitness') {
             setFrequency('daily');
-            setExercises([{ name: '', currentAmount: 30, unit: 'reps' }]);
+            setExercises([{ name: '', currentAmount: '30', unit: 'reps' }]);
         } else if (t.value === 'mindfulness') {
             setFrequency('daily');
-            setExercises([{ name: '', currentAmount: 10, unit: 'minutes' }]);
+            setExercises([{ name: '', currentAmount: '10', unit: 'minutes' }]);
         } else if (t.value === 'learning') {
             setFrequency('daily');
-            setExercises([{ name: '', currentAmount: 20, unit: 'pages' }]);
+            setExercises([{ name: '', currentAmount: '20', unit: 'pages' }]);
         } else {
             setExercises([]);
         }
@@ -87,10 +95,10 @@ export const HabitWizard = () => {
     };
 
     const addExercise = () => {
-        setExercises([...exercises, { name: '', currentAmount: 10, unit: 'minutes' }]);
+        setExercises([...exercises, { name: '', currentAmount: '10', unit: 'minutes' }]);
     };
 
-    const updateExercise = (index: number, updates: Partial<GoalExercise>) => {
+    const updateExercise = (index: number, updates: Partial<FormExercise>) => {
         setExercises(exercises.map((e, i) => i === index ? { ...e, ...updates } : e));
     };
 
@@ -105,15 +113,25 @@ export const HabitWizard = () => {
         // Build exercises array with proper IDs
         const builtExercises: GoalExercise[] = exercises
             .filter(e => e.name?.trim())
-            .map(e => ({
-                id: crypto.randomUUID(),
-                name: e.name!.trim(),
-                targetAmount: e.currentAmount || 10,
-                startAmount: e.currentAmount || 10,
-                currentAmount: e.currentAmount || 10,
-                unit: e.unit || 'reps',
-                daysAtCurrentTarget: 0,
-            }));
+            .map(e => {
+                // Parse amount, fallback to 1 if invalid/0 as requested
+                const amount = parseInt(e.currentAmount) || 1;
+
+                // If user entered 0 or explicitly nothing and we defaulted to 1, we might want to warn?
+                // But request says "make it automatically 1".
+                // Unlike Goals, Habits don't have a "Start vs Target" conflict.
+                // However, let's minimally ensure they have a name.
+
+                return {
+                    id: crypto.randomUUID(),
+                    name: e.name.trim(),
+                    targetAmount: amount,
+                    startAmount: amount,
+                    currentAmount: amount,
+                    unit: e.unit || 'reps',
+                    daysAtCurrentTarget: 0,
+                };
+            });
 
         addHabit({
             title: title.trim(),
@@ -132,10 +150,12 @@ export const HabitWizard = () => {
     return (
         <>
             {/* FAB Button - Purple for habits */}
-            <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 flex justify-center z-40 pointer-events-none">
+            <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 flex justify-center items-center z-40 pointer-events-none">
+                {/* Backdrop Glow */}
+                <div className="absolute w-20 h-20 bg-black/40 blur-xl rounded-full" />
                 <motion.button
                     onClick={() => setIsOpen(true)}
-                    className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-purple-500 text-white flex items-center justify-center shadow-lg shadow-purple-500/30 pointer-events-auto"
+                    className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-purple-500 text-white flex items-center justify-center shadow-lg shadow-purple-500/30 pointer-events-auto relative"
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.95 }}
                 >
@@ -355,9 +375,9 @@ export const HabitWizard = () => {
                                                                 <label className="text-[10px] text-muted-foreground mb-1 block">Daily Amount</label>
                                                                 <Input
                                                                     type="number"
-                                                                    min="1"
-                                                                    value={exercise.currentAmount || 10}
-                                                                    onChange={(e) => updateExercise(index, { currentAmount: parseInt(e.target.value) || 10 })}
+                                                                    min="0"
+                                                                    value={exercise.currentAmount}
+                                                                    onChange={(e) => updateExercise(index, { currentAmount: e.target.value })}
                                                                     className="h-8 text-sm font-mono"
                                                                 />
                                                             </div>

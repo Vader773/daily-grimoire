@@ -83,7 +83,7 @@ export const AccumulatorModal = ({ isOpen, onClose, taskId, goalTitle, unit }: A
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
-                  min={1}
+                  min="0"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   className="h-12 text-lg font-mono text-center"
