@@ -14,6 +14,7 @@ export const ViewToggle = () => {
   ];
 
   const activeIndex = views.findIndex(v => v.key === activeView);
+  const buttonWidth = 100 / views.length; // Each button takes equal percentage
 
   return (
     <div className="flex justify-center px-2">
@@ -21,19 +22,17 @@ export const ViewToggle = () => {
         className="relative inline-flex items-center p-1 sm:p-1.5 rounded-xl sm:rounded-2xl bg-card/80 backdrop-blur-xl border border-border/50 shadow-lg overflow-hidden w-full max-w-md sm:max-w-none sm:w-auto"
         layout
       >
-        {/* Animated background indicator */}
+        {/* Animated background indicator - use left percentage instead of transform */}
         <motion.div
           className={cn(
-            "absolute h-[calc(100%-8px)] sm:h-[calc(100%-12px)] rounded-lg sm:rounded-xl transition-colors duration-300",
+            "absolute top-1 bottom-1 sm:top-1.5 sm:bottom-1.5 rounded-lg sm:rounded-xl transition-colors duration-300",
             views[activeIndex]?.color || 'bg-primary'
           )}
-          layout
           initial={false}
           animate={{
-            x: `${activeIndex * 100}%`,
-            width: `calc(${100 / views.length}% - 4px)`,
+            left: `calc(${activeIndex * buttonWidth}% + 4px)`,
+            width: `calc(${buttonWidth}% - 8px)`,
           }}
-          style={{ left: 4 }}
           transition={{ type: "spring", bounce: 0.15, duration: 0.5 }}
         />
 
@@ -45,7 +44,7 @@ export const ViewToggle = () => {
           }}
           animate={{ y: [0, 4, 0] }}
           transition={{ duration: 0.1, repeat: 0 }}
-          key={activeView} // Trigger on view change
+          key={activeView}
         />
 
         {views.map((view) => (
@@ -53,7 +52,7 @@ export const ViewToggle = () => {
             key={view.key}
             onClick={() => setActiveView(view.key)}
             className={cn(
-              "relative z-10 flex-1 sm:flex-none px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1 sm:gap-2 justify-center sm:min-w-[90px]",
+              "relative z-10 flex-1 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1 sm:gap-2 justify-center",
               activeView === view.key
                 ? view.textColor
                 : "text-muted-foreground hover:text-foreground"
