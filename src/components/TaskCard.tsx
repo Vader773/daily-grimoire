@@ -1,4 +1,5 @@
 import { Task, Difficulty, useGameStore } from '@/stores/gameStore';
+import { useTutorialStore } from '@/stores/tutorialStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, Check, Timer, Zap, Coffee, FileText, Dumbbell, Sword, Crown, Target, Sparkles, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -64,6 +65,8 @@ export const TaskCard = ({ task, index, onComplete, isGoalTask, isHabitTask }: T
     startTimer,
     completeTimer,
   } = useGameStore();
+
+  const spotlightTaskId = useTutorialStore((s) => s.spotlightTaskId);
 
   const [isCompleting, setIsCompleting] = useState(false);
   const [showParticles, setShowParticles] = useState(false);
@@ -170,6 +173,7 @@ export const TaskCard = ({ task, index, onComplete, isGoalTask, isHabitTask }: T
   return (
     <>
       <motion.div
+        id={spotlightTaskId === task.id ? 'tutorial-task-card' : undefined}
         layout
         initial={{ opacity: 0, y: 20, scale: 0.95 }}
         animate={{

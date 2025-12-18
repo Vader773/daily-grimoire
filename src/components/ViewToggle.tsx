@@ -50,6 +50,7 @@ export const ViewToggle = () => {
         {views.map((view) => (
           <motion.button
             key={view.key}
+            id={`view-toggle-${view.key}`}
             onClick={() => setActiveView(view.key)}
             className={cn(
               "relative z-10 flex-1 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-colors flex items-center gap-1 sm:gap-2 justify-center",

@@ -34,6 +34,8 @@ export const AddQuestModal = () => {
     if (!title.trim()) return;
 
     addTask(title.trim(), difficulty, showTimerOption && timerEnabled ? timerMinutes : undefined);
+    window.dispatchEvent(new Event('questline-tutorial-task-created'));
+
     setTitle('');
     // Don't reset difficulty - keep the last used one
     setTimerEnabled(false);
@@ -50,11 +52,16 @@ export const AddQuestModal = () => {
     }
   };
 
+  useEffect(() => {
+    window.dispatchEvent(new Event(isOpen ? 'questline-add-quest-opened' : 'questline-add-quest-closed'));
+  }, [isOpen]);
+
   return (
     <>
       {/* FAB Button - Centered using flexbox */}
       <div className="fixed bottom-4 sm:bottom-6 left-0 right-0 flex justify-center z-40 pointer-events-none">
         <motion.button
+          id="add-task-btn"
           onClick={() => setIsOpen(true)}
           className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center glow-primary shadow-lg pointer-events-auto"
           whileHover={{ scale: 1.1 }}
@@ -79,6 +86,7 @@ export const AddQuestModal = () => {
 
             {/* Bottom Sheet */}
             <motion.div
+              id="add-task-modal"
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
