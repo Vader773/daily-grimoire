@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Trophy, Sparkles, Lock, Check } from 'lucide-react';
 import { useGameStore, League } from '@/stores/gameStore';
@@ -104,9 +105,38 @@ const isIOS = () => {
 };
 
 export const LeaguesPage = ({ isOpen, onClose }: LeaguesPageProps) => {
-  const currentLeague = useGameStore(state => state.getLeague());
-  const monthlyXP = useGameStore(state => state.getMonthlyXP());
+  // Subscribe to raw data only to avoid infinite loops
+  const stats = useGameStore(state => state.stats);
+  const debugLeagueOverride = useGameStore(state => state.debugLeagueOverride);
   const useIOSFallback = isIOS();
+
+  // Compute monthlyXP locally
+  const monthlyXP = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    let total = 0;
+    stats.dailyXP.forEach(entry => {
+      const d = new Date(entry.date);
+      if (d.getFullYear() === year && d.getMonth() === month) total += entry.xp;
+    });
+    return total;
+  }, [stats.dailyXP]);
+
+  // Compute league locally
+  const currentLeague = useMemo((): League => {
+    if (debugLeagueOverride) return debugLeagueOverride;
+    if (monthlyXP >= LEAGUE_THRESHOLDS.immortal) return 'immortal';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.legend) return 'legend';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.champion) return 'champion';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.grandmaster) return 'grandmaster';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.master) return 'master';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.diamond) return 'diamond';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.platinum) return 'platinum';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.gold) return 'gold';
+    if (monthlyXP >= LEAGUE_THRESHOLDS.silver) return 'silver';
+    return 'bronze';
+  }, [monthlyXP, debugLeagueOverride]);
 
   const currentLeagueIndex = LEAGUE_ORDER.indexOf(currentLeague);
 
