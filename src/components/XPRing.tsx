@@ -79,66 +79,18 @@ export const XPRing = ({ isLevelingUp = false }: XPRingProps) => {
 
   // CRITICAL: Subscribe directly to the data that changes
   const stats = useGameStore(state => state.stats);
-  const debugLeagueOverride = useGameStore(state => state.debugLeagueOverride);
   const activeView = useGameStore(state => state.activeView);
   const dailyXP = stats.dailyXP;
   const totalLifetimeXP = stats.totalLifetimeXP;
   const level = stats.level;
 
-  // FIX: Calculate monthlyXP reactively when dailyXP changes
-  const monthlyXP = useMemo(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    let totalXP = 0;
-
-    dailyXP.forEach(entry => {
-      const entryDate = new Date(entry.date);
-      if (entryDate.getFullYear() === year && entryDate.getMonth() === month) {
-        totalXP += entry.xp;
-      }
-    });
-
-    return totalXP;
-  }, [dailyXP]);
+  // Use store getters to keep League Hall + hero ring perfectly in sync
+  const monthlyXP = useGameStore(state => state.getMonthlyXP());
+  const league = useGameStore(state => state.getLeague());
+  const leagueProgress = useGameStore(state => state.getLeagueProgress());
 
   const getCurrentLevelProgress = useGameStore(state => state.getCurrentLevelProgress);
   const xpProgress = getCurrentLevelProgress();
-
-  // Calculate league based on monthlyXP
-  const calculatedLeague = useMemo((): League => {
-    if (monthlyXP >= LEAGUE_THRESHOLDS.immortal) return 'immortal';
-    if (monthlyXP >= LEAGUE_THRESHOLDS.legend) return 'legend';
-    if (monthlyXP >= LEAGUE_THRESHOLDS.champion) return 'champion';
-    if (monthlyXP >= LEAGUE_THRESHOLDS.grandmaster) return 'grandmaster';
-    if (monthlyXP >= LEAGUE_THRESHOLDS.master) return 'master';
-    if (monthlyXP >= LEAGUE_THRESHOLDS.diamond) return 'diamond';
-    if (monthlyXP >= LEAGUE_THRESHOLDS.platinum) return 'platinum';
-    if (monthlyXP >= LEAGUE_THRESHOLDS.gold) return 'gold';
-    if (monthlyXP >= LEAGUE_THRESHOLDS.silver) return 'silver';
-    return 'bronze';
-  }, [monthlyXP]);
-
-  const league = debugLeagueOverride || calculatedLeague;
-
-  // Calculate league progress
-  const leagueProgress = useMemo(() => {
-    const thresholds = LEAGUE_THRESHOLDS;
-    const tiers: League[] = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'master', 'grandmaster', 'champion', 'legend', 'immortal'];
-    const currentIndex = tiers.indexOf(league);
-    const nextLeague = currentIndex < tiers.length - 1 ? tiers[currentIndex + 1] : null;
-
-    const currentThreshold = thresholds[league];
-    const nextThreshold = nextLeague ? thresholds[nextLeague] : 35000;
-
-    if (!nextLeague) return { current: monthlyXP, needed: 35000, nextLeague: null, percent: 100 };
-
-    const needed = nextThreshold - currentThreshold;
-    const currentInTier = Math.max(0, monthlyXP - currentThreshold);
-    const percent = Math.min(100, Math.max(0, (currentInTier / needed) * 100));
-
-    return { current: currentInTier, needed, nextThreshold, nextLeague, percent };
-  }, [monthlyXP, league]);
 
   // Calculate XP display values
   const currentLevelXP = getXPForLevel(level);
@@ -345,7 +297,7 @@ export const XPRing = ({ isLevelingUp = false }: XPRingProps) => {
               leagueBgColors[league] ? leagueBgColors[league] : "bg-primary"
             )} />
             <span className={cn("font-mono capitalize", leagueTextClass[league])}>
-              {league}: {monthlyXP} / {leagueProgress.nextThreshold || 1000}
+              {league}: {monthlyXP} / {leagueProgress.needed}
             </span>
           </div>
         </div>
