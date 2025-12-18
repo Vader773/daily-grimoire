@@ -12,7 +12,7 @@ import { HabitWizard } from '@/components/HabitWizard';
 import { ViceWizard } from '@/components/ViceWizard';
 import { ViewToggle } from '@/components/ViewToggle';
 import { XPFloater } from '@/components/XPFloater';
-import { OnboardingTour } from '@/components/OnboardingTour';
+import { PlayableTutorial } from '@/components/onboarding/PlayableTutorial';
 import { playGameSfx, haptic } from '@/lib/juice';
 
 import { useGameStore } from '@/stores/gameStore';
@@ -43,6 +43,9 @@ const Index = () => {
       haptic(12);
     }
 
+    // Tutorial signal: task completed (used for onboarding Step 3)
+    window.dispatchEvent(new CustomEvent('questline-tutorial-task-completed', { detail: { xp, leveledUp } }));
+
     // Show XP floater
     setFloaterXP(xp);
     setShowXPFloater(true);
@@ -50,6 +53,7 @@ const Index = () => {
     // Show confetti for level up or boss tasks
     if (leveledUp || xp >= 50) {
       setShowConfetti(true);
+      window.dispatchEvent(new Event('questline-tutorial-confetti'));
       setTimeout(() => setShowConfetti(false), 3000);
     }
 
@@ -82,11 +86,11 @@ const Index = () => {
       />
 
       <Header />
-      <OnboardingTour />
+      <PlayableTutorial />
 
       <main className="w-full max-w-screen-lg mx-auto px-4 pt-16 sm:pt-20">
         {/* Compact Hero Section - XP Ring with integrated League */}
-        <section className="py-4 sm:py-6 flex flex-col items-center">
+        <section id="xp-ring" className="py-4 sm:py-6 flex flex-col items-center">
           <XPRing isLevelingUp={isLevelingUp} />
         </section>
 
