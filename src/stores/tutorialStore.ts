@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type TutorialStep = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+export type TutorialStep = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 const STORAGE_KEY = 'questline_tutorial_complete';
 
@@ -44,7 +44,7 @@ export const useTutorialStore = create<TutorialState>((set, get) => ({
 
   next: () =>
     set((s) => ({
-      step: (Math.min(6, (s.step + 1) as TutorialStep) as TutorialStep),
+      step: (Math.min(7, (s.step + 1) as TutorialStep) as TutorialStep),
     })),
 
   prev: () =>

@@ -25,6 +25,8 @@ export const OnboardingOverlay = ({ targetSelector, className, padding = 10 }: P
         return;
       }
       const r = el.getBoundingClientRect();
+
+      // Compute rect
       setRect({
         top: Math.max(0, r.top - padding),
         left: Math.max(0, r.left - padding),
@@ -53,7 +55,6 @@ export const OnboardingOverlay = ({ targetSelector, className, padding = 10 }: P
       left: rect.left,
       width: rect.width,
       height: rect.height,
-      boxShadow: '0 0 0 9999px transparent',
     } as React.CSSProperties;
   }, [rect]);
 
@@ -62,13 +63,30 @@ export const OnboardingOverlay = ({ targetSelector, className, padding = 10 }: P
       {/* Screen dim - REMOVED */}
       {/* <div className="absolute inset-0 bg-background/60" /> */}
 
-      {/* Spotlight cutout */}
+      {/* Spotlight cutout (Dimmer - Static) */}
       {rect && (
         <div
-          className="absolute rounded-2xl border border-primary/30"
-          style={cutoutStyle}
+          className="absolute rounded-2xl transition-all duration-300"
+          style={{
+            ...cutoutStyle,
+            boxShadow: '0 0 0 9999px hsl(var(--background) / 0.8)',
+          }}
         />
       )}
+
+      {/* Spotlight Border (Pulsing) */}
+      {rect && (
+        <div
+          className="absolute rounded-2xl border-4 border-primary shadow-[0_0_30px_hsl(var(--primary)/0.5)] transition-all duration-300"
+          style={{
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
+          }}
+        />
+      )}
+
     </div>
   );
 };

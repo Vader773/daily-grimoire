@@ -138,7 +138,7 @@ export const PlayableTutorial = () => {
         selector: '#add-task-modal',
         canGoNext: false,
         primaryLabel: 'Waiting…',
-        onPrimary: () => {},
+        onPrimary: () => { },
       };
     }
 
@@ -149,7 +149,7 @@ export const PlayableTutorial = () => {
         selector: spotlightTaskId ? '#tutorial-task-card' : null,
         canGoNext: false,
         primaryLabel: 'Waiting…',
-        onPrimary: () => {},
+        onPrimary: () => { },
       };
     }
 
@@ -166,9 +166,20 @@ export const PlayableTutorial = () => {
 
     if (step === 5) {
       return {
-        title: 'Automation (Goals & Habits)',
-        body: "Switch to 'Goals' to set long-term targets. The system auto-generates quests for you. Finished goals can be promoted into Habits (daily/weekly recurring quests).",
+        title: 'Strategy (Goals)',
+        body: "Switch to 'Goals' to set long-term targets. The system auto-generates quests to help you reach them.",
         selector: '#view-toggle-goals',
+        canGoNext: true,
+        primaryLabel: 'Next',
+        onPrimary: next,
+      };
+    }
+
+    if (step === 6) {
+      return {
+        title: 'Automation (Habits)',
+        body: "Promote finished goals into 'Habits' for recurring daily or weekly protocols. Build consistency.",
+        selector: '#view-toggle-habits',
         canGoNext: true,
         primaryLabel: 'Next',
         onPrimary: next,
@@ -186,12 +197,13 @@ export const PlayableTutorial = () => {
   }, [step, next, finish, spotlightTaskId]);
 
   const messagePlacement = useMemo(() => {
+    if (step === 3) return 'top'; // Force top placement to avoid blocking checkmark on mobile
     if (!stepConfig.selector) return 'bottom';
     const el = document.querySelector(stepConfig.selector) as HTMLElement | null;
     if (!el) return 'bottom';
     const r = el.getBoundingClientRect();
     return r.top < window.innerHeight * 0.45 ? 'bottom' : 'top';
-  }, [stepConfig.selector]);
+  }, [stepConfig.selector, step]);
 
   if (!open) return null;
 
@@ -248,7 +260,7 @@ export const PlayableTutorial = () => {
                   <Button
                     onClick={stepConfig.onPrimary}
                     disabled={!stepConfig.canGoNext && stepConfig.primaryLabel !== 'Open +'}
-                    variant={step === 1 ? 'secondary' : step === 6 ? 'default' : 'default'}
+                    variant={step === 1 ? 'secondary' : step === 7 ? 'default' : 'default'}
                   >
                     {stepConfig.primaryLabel}
                     <ChevronRight className="w-4 h-4" />
@@ -257,7 +269,7 @@ export const PlayableTutorial = () => {
               </div>
 
               <div className="mt-4 flex items-center justify-center gap-1.5">
-                {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
                   <div
                     key={i}
                     className={cn(
