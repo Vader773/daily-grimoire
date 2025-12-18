@@ -53,14 +53,14 @@ export const OnboardingOverlay = ({ targetSelector, className, padding = 10 }: P
       left: rect.left,
       width: rect.width,
       height: rect.height,
-      boxShadow: '0 0 0 9999px hsl(var(--background) / 0.70)',
+      boxShadow: '0 0 0 9999px transparent',
     } as React.CSSProperties;
   }, [rect]);
 
   return (
     <div className={cn('fixed inset-0 z-[60] pointer-events-none', className)} aria-hidden="true">
-      {/* Screen dim */}
-      <div className="absolute inset-0 bg-background/60 backdrop-blur-[2px]" />
+      {/* Screen dim - REMOVED */}
+      {/* <div className="absolute inset-0 bg-background/60" /> */}
 
       {/* Spotlight cutout */}
       {rect && (
