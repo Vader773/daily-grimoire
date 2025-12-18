@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore, getTodayDate, Vice } from '@/stores/gameStore';
 import { Skull, Shield, ShieldCheck, AlertCircle, Flame, Trophy } from 'lucide-react';
@@ -20,10 +20,10 @@ export const ViceList = () => {
     const { vices, checkMissedViceDays } = useGameStore();
     const [showQuote, setShowQuote] = useState<string | null>(null);
 
-    // Check for missed days on mount
-    useState(() => {
+    // Check for missed days on mount - FIXED: was incorrectly using useState
+    useEffect(() => {
         checkMissedViceDays();
-    });
+    }, [checkMissedViceDays]);
 
     const today = getTodayDate();
     const activeVice = vices[0]; // Primary vice (One-Vice Rule)
